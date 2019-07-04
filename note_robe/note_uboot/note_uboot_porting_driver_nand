@@ -1,0 +1,137 @@
+
+#define UCLASS_DRIVER(__name)						\
+	ll_entry_declare(struct uclass_driver, __name, uclass)
+
+#define U_BOOT_DRIVER(__name)						\
+	ll_entry_declare(struct driver, __name, driver)
+
+#define ll_entry_declare(_type, _name, _list)				\
+	_type _u_boot_list_2_##_list##_2_##_name __aligned(4)		\
+			__attribute__((unused,				\
+			section(".u_boot_list_2_"#_list"_2_"#_name)))
+
+ll_entry_declare(_type, _name, _list)                                            // 驱动位于 u_boot_list 段中的 u_boot_list_2_
+= _type  _u_boot_list_2_##_list##_2_##_name  __aligned(4)  
+  __attribute__((unused,section(".u_boot_list_2_"#_list"_2_"#_name)))
+
+
+struct driver {
+	char *name;
+	enum uclass_id id;
+	const struct udevice_id *of_match;
+	int (*bind)(struct udevice *dev);
+	int (*probe)(struct udevice *dev);
+	int (*remove)(struct udevice *dev);
+	int (*unbind)(struct udevice *dev);
+	int (*ofdata_to_platdata)(struct udevice *dev);
+	int (*child_post_bind)(struct udevice *dev);
+	int (*child_pre_probe)(struct udevice *dev);
+	int (*child_post_remove)(struct udevice *dev);
+	int priv_auto_alloc_size;
+	int platdata_auto_alloc_size;
+	int per_child_auto_alloc_size;
+	int per_child_platdata_auto_alloc_size;
+	const void *ops;	/* driver-specific operations */
+	uint32_t flags;
+};
+
+struct udevice_id {
+	const char *compatible;
+	ulong data;
+};
+
+struct udevice {
+	const struct driver *driver;
+	const char *name;
+	void *platdata;
+	void *parent_platdata;
+	void *uclass_platdata;
+	ofnode node;
+	ulong driver_data;
+	struct udevice *parent;
+	void *priv;
+	struct uclass *uclass;
+	void *uclass_priv;
+	void *parent_priv;
+	struct list_head uclass_node;
+	struct list_head child_head;
+	struct list_head sibling_node;
+	uint32_t flags;
+	int req_seq;
+	int seq;
+#ifdef CONFIG_DEVRES
+	struct list_head devres_head;
+#endif
+};
+
+// ================================  串口驱动    (定义了 DM_SERIAL 的情况)
+U_BOOT_DRIVER(serial_mxc) = {
+	.name	= "serial_mxc",
+	.id	= UCLASS_SERIAL,
+#if CONFIG_IS_ENABLED(OF_CONTROL)                     // 未定义
+	.of_match = mxc_serial_ids,
+	.ofdata_to_platdata = mxc_serial_ofdata_to_platdata,
+	.platdata_auto_alloc_size = sizeof(struct mxc_serial_platdata),
+#endif
+	.probe = mxc_serial_probe,
+	.ops	= &mxc_serial_ops,
+#if !CONFIG_IS_ENABLED(OF_CONTROL)                    // 未定义
+	.flags = DM_FLAG_PRE_RELOC,
+#endif
+};
+
+U_BOOT_DRIVER(serial_mxc) = {
+	.name	= "serial_mxc",
+	.id	= UCLASS_SERIAL,
+	.probe = mxc_serial_probe,                        // uart 初始化，寄存器操作
+	.ops	= &mxc_serial_ops,
+};
+
+static const struct dm_serial_ops mxc_serial_ops = {  // uart 设置波特率，首发函数，pending函数，寄存器操作
+	.putc = mxc_serial_putc,                           
+	.pending = mxc_serial_pending,
+	.getc = mxc_serial_getc,
+	.setbrg = mxc_serial_setbrg,
+};
+
+// ================================  串口驱动    (不定义 DM_SERIAL 的情况)
+void mxc_serial_initialize(void)
+{
+	serial_register(&mxc_serial_drv);                      // 初始化，添加到 dev 链表中
+}
+
+__weak struct serial_device *default_serial_console(void)
+{
+	return &mxc_serial_drv;
+}
+
+static struct serial_device mxc_serial_drv = {
+	.name	= "mxc_serial",
+	.start	= mxc_serial_init,                            // 初始化，设置 brg，寄存器操作
+	.stop	= NULL,
+	.setbrg	= mxc_serial_setbrg,                          // 设置 brg, 寄存器操作
+	.putc	= mxc_serial_putc,                            // 发送 char，发送 string，接受 char，发送完成检查，寄存器操作
+	.puts	= default_serial_puts,
+	.getc	= mxc_serial_getc,
+	.tstc	= mxc_serial_tstc,
+};
+
+struct serial_device {
+	/* enough bytes to match alignment of following func pointer */
+	char	name[16];
+
+	int	(*start)(void);
+	int	(*stop)(void);
+	void	(*setbrg)(void);
+	int	(*getc)(void);
+	int	(*tstc)(void);
+	void	(*putc)(const char c);
+	void	(*puts)(const char *s);
+#if CONFIG_POST & CONFIG_SYS_POST_UART
+	void	(*loop)(int);
+#endif
+	struct serial_device	*next;
+};
+
+
+

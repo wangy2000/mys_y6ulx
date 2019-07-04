@@ -1,0 +1,10 @@
+#!/bin/bash
+echo " apt update =========================="
+sudo apt update
+echo " apt update OK! ======================"
+echo " apt upgrade ========================="
+sudo apt upgrade
+echo " apt upgrade OK! ====================="
+echo " apt autoremove ======================"
+sudo apt autoremove
+echo " apt autoremove OK!==================="

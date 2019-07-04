@@ -1,0 +1,10 @@
+
+all:
+	@echo "var is ${var}"
+	
+all_1:
+	@echo "var1 is ${var1}"
+	
+
+
+

@@ -1,0 +1,324 @@
+// ================================
+void __init sanity_check_meminfo(void)
+{
+	phys_addr_t memblock_limit = 0;
+	int highmem = 0;
+	phys_addr_t vmalloc_limit = __pa(vmalloc_min - 1) + 1;
+	struct memblock_region *reg;
+
+	for_each_memblock(memory, reg) {                                         // 遍历所有 memblock.memory.regions
+		phys_addr_t block_start = reg->base;
+		phys_addr_t block_end = reg->base + reg->size;
+		phys_addr_t size_limit = reg->size;
+
+		if (reg->base >= vmalloc_limit)
+			highmem = 1;
+		else
+			size_limit = vmalloc_limit - reg->base;
+
+
+		if (!IS_ENABLED(CONFIG_HIGHMEM) || cache_is_vipt_aliasing()) {
+
+			if (highmem) {
+				pr_notice("Ignoring RAM at %pa-%pa (!CONFIG_HIGHMEM)\n",
+					  &block_start, &block_end);
+				memblock_remove(reg->base, reg->size);                      // memblock_remove 函数，删除 region                                       1111
+				continue;
+			}
+
+			if (reg->size > size_limit) {
+				phys_addr_t overlap_size = reg->size - size_limit;
+
+				pr_notice("Truncating RAM at %pa-%pa to -%pa",
+					  &block_start, &block_end, &vmalloc_limit);
+				memblock_remove(vmalloc_limit, overlap_size);
+				block_end = vmalloc_limit;
+			}
+		}
+
+		if (!highmem) {
+			if (block_end > arm_lowmem_limit) {
+				if (reg->size > size_limit)
+					arm_lowmem_limit = vmalloc_limit;                       // 设置低内存上限
+				else
+					arm_lowmem_limit = block_end;
+			}
+
+			/*
+			 * Find the first non-pmd-aligned page, and point
+			 * memblock_limit at it. This relies on rounding the
+			 * limit down to be pmd-aligned, which happens at the
+			 * end of this function.
+			 *
+			 * With this algorithm, the start or end of almost any
+			 * bank can be non-pmd-aligned. The only exception is
+			 * that the start of the bank 0 must be section-
+			 * aligned, since otherwise memory would need to be
+			 * allocated when mapping the start of bank 0, which
+			 * occurs before any free memory is mapped.
+			 */
+			if (!memblock_limit) {
+				if (!IS_ALIGNED(block_start, PMD_SIZE))
+					memblock_limit = block_start;
+				else if (!IS_ALIGNED(block_end, PMD_SIZE))
+					memblock_limit = arm_lowmem_limit;
+			}
+
+		}
+	}
+
+	high_memory = __va(arm_lowmem_limit - 1) + 1;                           // 设置高内存下限
+
+	/*
+	 * Round the memblock limit down to a pmd size.  This
+	 * helps to ensure that we will allocate memory from the
+	 * last full pmd, which should be mapped.
+	 */
+	if (memblock_limit)
+		memblock_limit = round_down(memblock_limit, PMD_SIZE);
+	if (!memblock_limit)
+		memblock_limit = arm_lowmem_limit;
+
+	memblock_set_current_limit(memblock_limit);                             // 设置 memblock_limit
+}
+
+int __init_memblock memblock_remove(phys_addr_t base, phys_addr_t size)
+{
+	return memblock_remove_range(&memblock.memory, base, size);
+}
+
+int __init_memblock memblock_remove_range(struct memblock_type *type,                // =============================                               2222
+					  phys_addr_t base, phys_addr_t size)
+{
+	int start_rgn, end_rgn;
+	int i, ret;
+
+	ret = memblock_isolate_range(type, base, size, &start_rgn, &end_rgn);            // 先把 region 扩大一倍，然后分离 region，找出 base，size 中间的 region，记录起止 start_rgn，end_rgn
+	if (ret)
+		return ret;
+
+	for (i = end_rgn - 1; i >= start_rgn; i--)
+		memblock_remove_region(type, i);                                             // 删除 start_rgn，end_rgn 之间所有 region
+	return 0;
+}
+
+static int __init_memblock memblock_isolate_range(struct memblock_type *type,        //                                                             3333                  
+					phys_addr_t base, phys_addr_t size,
+					int *start_rgn, int *end_rgn)
+{
+	phys_addr_t end = base + memblock_cap_size(base, &size);
+	int i;
+
+	*start_rgn = *end_rgn = 0;
+
+	if (!size)
+		return 0;
+
+	/* we'll create at most two more regions */
+	while (type->cnt + 2 > type->max)
+		if (memblock_double_array(type, base, size) < 0)                             // 先把 struct memblock_region 放大 2 倍
+			return -ENOMEM;
+
+	for (i = 0; i < type->cnt; i++) {
+		struct memblock_region *rgn = &type->regions[i];
+		phys_addr_t rbase = rgn->base;
+		phys_addr_t rend = rbase + rgn->size;
+
+		if (rbase >= end)
+			break;
+		if (rend <= base)
+			continue;
+
+		if (rbase < base) {
+			/*
+			 * @rgn intersects from below.  Split and continue
+			 * to process the next region - the new top half.
+			 */
+			rgn->base = base;
+			rgn->size -= base - rbase;
+			type->total_size -= base - rbase;
+			memblock_insert_region(type, i, rbase, base - rbase,                   // 把 type 中 base，size 前 region 分离成单独 region 插入 type
+					       memblock_get_region_node(rgn),
+					       rgn->flags);
+		} else if (rend > end) {
+			/*
+			 * @rgn intersects from above.  Split and redo the
+			 * current region - the new bottom half.
+			 */
+			rgn->base = end;
+			rgn->size -= end - rbase;
+			type->total_size -= end - rbase;
+			memblock_insert_region(type, i--, rbase, end - rbase,                  // 把 type 中 base，size 后 region 分离成单独 region 插入 type
+					       memblock_get_region_node(rgn),
+					       rgn->flags);
+		} else {
+			/* @rgn is fully contained, record it */
+			if (!*end_rgn)
+				*start_rgn = i;
+			*end_rgn = i + 1;                                                      // 找到 type 中 base，size 之间的 region，记录起始结束region 为 start_rgn 和 end_rgn
+		}
+	}
+
+	return 0;
+}
+
+static int __init_memblock memblock_double_array(struct memblock_type *type,
+						phys_addr_t new_area_start,
+						phys_addr_t new_area_size)
+{
+	struct memblock_region *new_array, *old_array;
+	phys_addr_t old_alloc_size, new_alloc_size;
+	phys_addr_t old_size, new_size, addr;
+	int use_slab = slab_is_available();
+	int *in_slab;
+
+	/* We don't allow resizing until we know about the reserved regions
+	 * of memory that aren't suitable for allocation
+	 */
+	if (!memblock_can_resize)
+		return -1;
+
+	/* Calculate new doubled size */
+	old_size = type->max * sizeof(struct memblock_region);
+	new_size = old_size << 1;
+	/*
+	 * We need to allocated new one align to PAGE_SIZE,
+	 *   so we can free them completely later.
+	 */
+	old_alloc_size = PAGE_ALIGN(old_size);
+	new_alloc_size = PAGE_ALIGN(new_size);
+
+	/* Retrieve the slab flag */
+	if (type == &memblock.memory)
+		in_slab = &memblock_memory_in_slab;
+	else
+		in_slab = &memblock_reserved_in_slab;
+
+	/* Try to find some space for it.
+	 *
+	 * WARNING: We assume that either slab_is_available() and we use it or
+	 * we use MEMBLOCK for allocations. That means that this is unsafe to
+	 * use when bootmem is currently active (unless bootmem itself is
+	 * implemented on top of MEMBLOCK which isn't the case yet)
+	 *
+	 * This should however not be an issue for now, as we currently only
+	 * call into MEMBLOCK while it's still active, or much later when slab
+	 * is active for memory hotplug operations
+	 */
+	if (use_slab) {
+		new_array = kmalloc(new_size, GFP_KERNEL);                               // 两种分配方式，一种是 slab 启用的情况，使用 kmalloc 分配内存，kfree 释放内存
+		addr = new_array ? __pa(new_array) : 0;
+	} else {
+		/* only exclude range when trying to double reserved.regions */
+		if (type != &memblock.reserved)
+			new_area_start = new_area_size = 0;
+
+		addr = memblock_find_in_range(new_area_start + new_area_size,            // slab 没有启用，使用 memblock_find_in_range 分配内存，memblock_free 释放内存
+						memblock.current_limit,
+						new_alloc_size, PAGE_SIZE);
+		if (!addr && new_area_size)
+			addr = memblock_find_in_range(0,
+				min(new_area_start, memblock.current_limit),
+				new_alloc_size, PAGE_SIZE);
+
+		new_array = addr ? __va(addr) : NULL;
+	}
+	if (!addr) {
+		pr_err("memblock: Failed to double %s array from %ld to %ld entries !\n",
+		       memblock_type_name(type), type->max, type->max * 2);
+		return -1;
+	}
+
+	memblock_dbg("memblock: %s is doubled to %ld at [%#010llx-%#010llx]",
+			memblock_type_name(type), type->max * 2, (u64)addr,
+			(u64)addr + new_size - 1);
+
+	/*
+	 * Found space, we now need to move the array over before we add the
+	 * reserved region since it may be our reserved array itself that is
+	 * full.
+	 */
+	memcpy(new_array, type->regions, old_size);
+	memset(new_array + type->max, 0, old_size);
+	old_array = type->regions;
+	type->regions = new_array;
+	type->max <<= 1;
+
+	/* Free old array. We needn't free it if the array is the static one */
+	if (*in_slab)
+		kfree(old_array);
+	else if (old_array != memblock_memory_init_regions &&
+		 old_array != memblock_reserved_init_regions)
+		memblock_free(__pa(old_array), old_alloc_size);
+
+	/*
+	 * Reserve the new array if that comes from the memblock.  Otherwise, we
+	 * needn't do it
+	 */
+	if (!use_slab)
+		BUG_ON(memblock_reserve(addr, new_alloc_size));
+
+	/* Update slab flag */
+	*in_slab = use_slab;
+
+	return 0;
+}
+
+static void __init_memblock memblock_remove_region(struct memblock_type *type, unsigned long r)         // 减少一个 region                                4444
+{
+	type->total_size -= type->regions[r].size;
+	memmove(&type->regions[r], &type->regions[r + 1],
+		(type->cnt - (r + 1)) * sizeof(type->regions[r]));
+	type->cnt--;
+
+	/* Special case for empty arrays */
+	if (type->cnt == 0) {
+		WARN_ON(type->total_size != 0);
+		type->cnt = 1;
+		type->regions[0].base = 0;
+		type->regions[0].size = 0;
+		type->regions[0].flags = 0;
+		memblock_set_region_node(&type->regions[0], MAX_NUMNODES);
+	}
+}
+
+
+
+
+
+
+
+// --------
+struct memblock_region {
+	phys_addr_t base;
+	phys_addr_t size;
+	unsigned long flags;
+#ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
+	int nid;
+#endif
+};
+
+struct memblock_type {                                                     // memblock.memory
+	unsigned long cnt;	/* number of regions */
+	unsigned long max;	/* size of the allocated array */                  
+	phys_addr_t total_size;	/* size of all regions */
+	struct memblock_region *regions;
+};
+
+struct memblock {
+	bool bottom_up;  /* is bottom up direction? */
+	phys_addr_t current_limit;
+	struct memblock_type memory;                                           // memblock.memory
+	struct memblock_type reserved;
+#ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
+	struct memblock_type physmem;
+#endif
+};
+
+extern struct memblock memblock;
+
+
+
+
+
+

@@ -1,0 +1,403 @@
+// ================================
+void __init arm_memblock_init(const struct machine_desc *mdesc)
+{
+	/* Register the kernel text, kernel data and initrd with memblock. */
+#ifdef CONFIG_XIP_KERNEL
+	memblock_reserve(__pa(_sdata), _end - _sdata);
+#else
+	memblock_reserve(__pa(_stext), _end - _stext);                                            // 保留 kernel 代码段 region
+                                                                                              // memblock_reserve 调用 memblock_reserve_region，又调用 memblock_add_range
+																							  // 又调用 memblock_insert_region，memblock_merge_regions 实现
+#endif
+#ifdef CONFIG_BLK_DEV_INITRD
+	/* FDT scan will populate initrd_start */
+	if (initrd_start && !phys_initrd_size) {
+		phys_initrd_start = __virt_to_phys(initrd_start);
+		phys_initrd_size = initrd_end - initrd_start;
+	}
+	initrd_start = initrd_end = 0;
+	if (phys_initrd_size &&
+	    !memblock_is_region_memory(phys_initrd_start, phys_initrd_size)) {
+		pr_err("INITRD: 0x%08llx+0x%08lx is not a memory region - disabling initrd\n",
+		       (u64)phys_initrd_start, phys_initrd_size);
+		phys_initrd_start = phys_initrd_size = 0;
+	}
+	if (phys_initrd_size &&
+	    memblock_is_region_reserved(phys_initrd_start, phys_initrd_size)) {
+		pr_err("INITRD: 0x%08llx+0x%08lx overlaps in-use memory region - disabling initrd\n",
+		       (u64)phys_initrd_start, phys_initrd_size);
+		phys_initrd_start = phys_initrd_size = 0;
+	}
+	if (phys_initrd_size) {
+		memblock_reserve(phys_initrd_start, phys_initrd_size);                                // 保留 initrd 代码段 region
+
+		/* Now convert initrd to virtual addresses */
+		initrd_start = __phys_to_virt(phys_initrd_start);                                     // initrd 代码起始地址转换为虚拟地址
+		initrd_end = initrd_start + phys_initrd_size;
+	}
+#endif
+
+	arm_mm_memblock_reserve();                                                                // 保留页表 region
+                                                                                              // ============================================================
+	/* reserve any platform specific memblock areas */
+	if (mdesc->reserve)
+		mdesc->reserve();                                                                     // 保留 mdesc 中需要保留的内存 region
+
+	early_init_fdt_scan_reserved_mem();                                                       // 遍历 FDT 中所有保留 region，并用 kmem 管理分配所有保留的内存
+
+	/* reserve memory for DMA contiguous allocations */
+	dma_contiguous_reserve(arm_dma_limit);                                                    // 保留 DMA region，分配内存，创建连续内存
+
+	arm_memblock_steal_permitted = false;
+	memblock_dump_all();                                                                      // dump 所有信息
+}
+
+void __init early_init_fdt_scan_reserved_mem(void)
+{
+	int n;
+	u64 base, size;
+
+	if (!initial_boot_params)
+		return;
+
+	/* Reserve the dtb region */
+	early_init_dt_reserve_memory_arch(__pa(initial_boot_params),                              // 保留 FDT region
+					  fdt_totalsize(initial_boot_params),
+					  0);
+
+	/* Process header /memreserve/ fields */
+	for (n = 0; ; n++) {
+		fdt_get_mem_rsv(initial_boot_params, n, &base, &size);                                // 遍历 FDT 头中 mem_rsv 段中的多有 region，保留 region
+		if (!size)
+			break;
+		early_init_dt_reserve_memory_arch(base, size, 0);
+	}
+
+	of_scan_flat_dt(__fdt_scan_reserved_mem, NULL);                                           // 遍历 FDT 中的所有节点，找到 reserved-memory 并保留 region
+	fdt_init_reserved_mem();                                                                  // 使用 kmem 初始化管理所有 FDT 中的保留内存
+}
+
+void __init fdt_init_reserved_mem(void)
+{
+	int i;
+	for (i = 0; i < reserved_mem_count; i++) {
+		struct reserved_mem *rmem = &reserved_mem[i];
+		unsigned long node = rmem->fdt_node;
+		int len;
+		const __be32 *prop;
+		int err = 0;
+
+		prop = of_get_flat_dt_prop(node, "phandle", &len);
+		if (!prop)
+			prop = of_get_flat_dt_prop(node, "linux,phandle", &len);
+		if (prop)
+			rmem->phandle = of_read_number(prop, len/4);
+
+		if (rmem->size == 0)
+			err = __reserved_mem_alloc_size(node, rmem->name,                                 // =========================================
+						 &rmem->base, &rmem->size);
+		if (err == 0)
+			__reserved_mem_init_node(rmem);
+	}
+}
+
+static int __init __reserved_mem_alloc_size(unsigned long node,
+	const char *uname, phys_addr_t *res_base, phys_addr_t *res_size)
+{
+	int t_len = (dt_root_addr_cells + dt_root_size_cells) * sizeof(__be32);
+	phys_addr_t start = 0, end = 0;
+	phys_addr_t base = 0, align = 0, size;
+	int len;
+	const __be32 *prop;
+	int nomap;
+	int ret;
+
+	prop = of_get_flat_dt_prop(node, "size", &len);
+	if (!prop)
+		return -EINVAL;
+
+	if (len != dt_root_size_cells * sizeof(__be32)) {
+		pr_err("Reserved memory: invalid size property in '%s' node.\n",
+				uname);
+		return -EINVAL;
+	}
+	size = dt_mem_next_cell(dt_root_size_cells, &prop);
+
+	nomap = of_get_flat_dt_prop(node, "no-map", NULL) != NULL;
+
+	prop = of_get_flat_dt_prop(node, "alignment", &len);
+	if (prop) {
+		if (len != dt_root_addr_cells * sizeof(__be32)) {
+			pr_err("Reserved memory: invalid alignment property in '%s' node.\n",
+				uname);
+			return -EINVAL;
+		}
+		align = dt_mem_next_cell(dt_root_addr_cells, &prop);
+	}
+
+	/* Need adjust the alignment to satisfy the CMA requirement */
+	if (IS_ENABLED(CONFIG_CMA) && of_flat_dt_is_compatible(node, "shared-dma-pool"))
+		align = max(align, (phys_addr_t)PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order));
+
+	prop = of_get_flat_dt_prop(node, "alloc-ranges", &len);
+	if (prop) {
+
+		if (len % t_len != 0) {
+			pr_err("Reserved memory: invalid alloc-ranges property in '%s', skipping node.\n",
+			       uname);
+			return -EINVAL;
+		}
+
+		base = 0;
+
+		while (len > 0) {
+			start = dt_mem_next_cell(dt_root_addr_cells, &prop);
+			end = start + dt_mem_next_cell(dt_root_size_cells,
+						       &prop);
+
+			ret = early_init_dt_alloc_reserved_memory_arch(size,                                       // ===============================
+					align, start, end, nomap, &base);
+			if (ret == 0) {
+				pr_debug("Reserved memory: allocated memory for '%s' node: base %pa, size %ld MiB\n",
+					uname, &base,
+					(unsigned long)size / SZ_1M);
+				break;
+			}
+			len -= t_len;
+		}
+
+	} else {
+		ret = early_init_dt_alloc_reserved_memory_arch(size, align,
+							0, 0, nomap, &base);
+		if (ret == 0)
+			pr_debug("Reserved memory: allocated memory for '%s' node: base %pa, size %ld MiB\n",
+				uname, &base, (unsigned long)size / SZ_1M);
+	}
+
+	if (base == 0) {
+		pr_info("Reserved memory: failed to allocate memory for node '%s'\n",
+			uname);
+		return -ENOMEM;
+	}
+
+	*res_base = base;
+	*res_size = size;
+
+	return 0;
+}
+
+int __init __weak early_init_dt_alloc_reserved_memory_arch(phys_addr_t size,
+	phys_addr_t align, phys_addr_t start, phys_addr_t end, bool nomap,
+	phys_addr_t *res_base)
+{
+	/*
+	 * We use __memblock_alloc_base() because memblock_alloc_base()
+	 * panic()s on allocation failure.
+	 */
+	phys_addr_t base = __memblock_alloc_base(size, align, end);                                       // =====================================
+	if (!base)
+		return -ENOMEM;
+
+	/*
+	 * Check if the allocated region fits in to start..end window
+	 */
+	if (base < start) {
+		memblock_free(base, size);
+		return -ENOMEM;
+	}
+
+	*res_base = base;
+	if (nomap)
+		return memblock_remove(base, size);
+	return 0;
+}
+
+phys_addr_t __init __memblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
+{
+	return memblock_alloc_base_nid(size, align, max_addr, NUMA_NO_NODE);
+}
+
+static phys_addr_t __init memblock_alloc_base_nid(phys_addr_t size,
+					phys_addr_t align, phys_addr_t max_addr,
+					int nid)
+{
+	return memblock_alloc_range_nid(size, align, 0, max_addr, nid);
+}
+
+static phys_addr_t __init memblock_alloc_range_nid(phys_addr_t size,
+					phys_addr_t align, phys_addr_t start,
+					phys_addr_t end, int nid)
+{
+	phys_addr_t found;
+
+	if (!align)
+		align = SMP_CACHE_BYTES;
+
+	found = memblock_find_in_range_node(size, align, start, end, nid);                                 // 查找到  size，end 所在的 range 的低地址返回
+	if (found && !memblock_reserve(found, size)) {                                                     // 保留 region 
+		/*
+		 * The min_count is set to 0 so that memblock allocations are
+		 * never reported as leaks.
+		 */
+		kmemleak_alloc(__va(found), size, 0, 0);                                                       // 创建包含 found，size 的 kmemleak_object 实例
+		return found;
+	}
+	return 0;
+}
+
+void __ref kmemleak_alloc(const void *ptr, size_t size, int min_count,
+			  gfp_t gfp)
+{
+	pr_debug("%s(0x%p, %zu, %d)\n", __func__, ptr, size, min_count);
+
+	if (kmemleak_enabled && ptr && !IS_ERR(ptr))
+		create_object((unsigned long)ptr, size, min_count, gfp);                                      // 从 object_cache (struct kmem_cache)中创建 kmemleak_object 实例，并添加到链表 object_list，红黑树 object_tree_root 中
+		                                                                                              // 用于管理内存泄漏
+	else if (kmemleak_early_log)
+		log_early(KMEMLEAK_ALLOC, ptr, size, min_count);
+}
+
+static struct kmemleak_object *create_object(unsigned long ptr, size_t size,
+					     int min_count, gfp_t gfp)
+{
+	unsigned long flags;
+	struct kmemleak_object *object, *parent;
+	struct rb_node **link, *rb_parent;
+
+	object = kmem_cache_alloc(object_cache, gfp_kmemleak_mask(gfp));
+	if (!object) {
+		pr_warning("Cannot allocate a kmemleak_object structure\n");
+		kmemleak_disable();
+		return NULL;
+	}
+
+	INIT_LIST_HEAD(&object->object_list);
+	INIT_LIST_HEAD(&object->gray_list);
+	INIT_HLIST_HEAD(&object->area_list);
+	spin_lock_init(&object->lock);
+	atomic_set(&object->use_count, 1);
+	object->flags = OBJECT_ALLOCATED;
+	object->pointer = ptr;
+	object->size = size;
+	object->min_count = min_count;
+	object->count = 0;			/* white color initially */
+	object->jiffies = jiffies;
+	object->checksum = 0;
+
+	/* task information */
+	if (in_irq()) {
+		object->pid = 0;
+		strncpy(object->comm, "hardirq", sizeof(object->comm));
+	} else if (in_softirq()) {
+		object->pid = 0;
+		strncpy(object->comm, "softirq", sizeof(object->comm));
+	} else {
+		object->pid = current->pid;
+		/*
+		 * There is a small chance of a race with set_task_comm(),
+		 * however using get_task_comm() here may cause locking
+		 * dependency issues with current->alloc_lock. In the worst
+		 * case, the command line is not correct.
+		 */
+		strncpy(object->comm, current->comm, sizeof(object->comm));
+	}
+
+	/* kernel backtrace */
+	object->trace_len = __save_stack_trace(object->trace);
+
+	write_lock_irqsave(&kmemleak_lock, flags);
+
+	min_addr = min(min_addr, ptr);
+	max_addr = max(max_addr, ptr + size);
+	link = &object_tree_root.rb_node;
+	rb_parent = NULL;
+	while (*link) {
+		rb_parent = *link;
+		parent = rb_entry(rb_parent, struct kmemleak_object, rb_node);
+		if (ptr + size <= parent->pointer)
+			link = &parent->rb_node.rb_left;
+		else if (parent->pointer + parent->size <= ptr)
+			link = &parent->rb_node.rb_right;
+		else {
+			kmemleak_stop("Cannot insert 0x%lx into the object "
+				      "search tree (overlaps existing)\n",
+				      ptr);
+			kmem_cache_free(object_cache, object);
+			object = parent;
+			spin_lock(&object->lock);
+			dump_object_info(object);
+			spin_unlock(&object->lock);
+			goto out;
+		}
+	}
+	rb_link_node(&object->rb_node, rb_parent, link);
+	rb_insert_color(&object->rb_node, &object_tree_root);
+
+	list_add_tail_rcu(&object->object_list, &object_list);
+out:
+	write_unlock_irqrestore(&kmemleak_lock, flags);
+	return object;
+}
+
+// ----------------
+struct kmemleak_object {
+	spinlock_t lock;
+	unsigned long flags;		/* object status flags */
+	struct list_head object_list;
+	struct list_head gray_list;
+	struct rb_node rb_node;
+	struct rcu_head rcu;		/* object_list lockless traversal */
+	/* object usage count; object freed when use_count == 0 */
+	atomic_t use_count;
+	unsigned long pointer;
+	size_t size;
+	/* minimum number of a pointers found before it is considered leak */
+	int min_count;
+	/* the total number of pointers found pointing to this object */
+	int count;
+	/* checksum for detecting modified objects */
+	u32 checksum;
+	/* memory ranges to be scanned inside an object (empty for all) */
+	struct hlist_head area_list;
+	unsigned long trace[MAX_TRACE];
+	unsigned int trace_len;
+	unsigned long jiffies;		/* creation timestamp */
+	pid_t pid;			/* pid of the current task */
+	char comm[TASK_COMM_LEN];	/* executable name */
+};
+
+
+// --------
+struct memblock_region {
+	phys_addr_t base;
+	phys_addr_t size;
+	unsigned long flags;
+#ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
+	int nid;
+#endif
+};
+
+struct memblock_type {                                                     // memblock.memory
+	unsigned long cnt;	/* number of regions */
+	unsigned long max;	/* size of the allocated array */                  
+	phys_addr_t total_size;	/* size of all regions */
+	struct memblock_region *regions;
+};
+
+struct memblock {
+	bool bottom_up;  /* is bottom up direction? */
+	phys_addr_t current_limit;
+	struct memblock_type memory;                                           // memblock.memory
+	struct memblock_type reserved;
+#ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
+	struct memblock_type physmem;
+#endif
+};
+
+extern struct memblock memblock;
+
+
+
+
+
+

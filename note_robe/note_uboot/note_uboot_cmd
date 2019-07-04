@@ -1,0 +1,171 @@
+// =====================================
+boot (uboot\cmd\boot.c)                                                   // 相当于 go 命令， exec 函数
+	boot 命令使用 go 命令实现
+	go 执行 do_go 函数，查找函数地址直接 entry (argc, argv)
+
+bootd
+    run_command(getenv("bootcmd"), flag);                                 // 执行 bootcmd 函数
+
+bootz (uboot\cmd\bootm.c)
+    bootz 0x83000000 - 0x84000000
+
+help (uboot\cmd\help.c)                                                   // 搜索 cmdtp 列表打印出来
+
+version (uboot\cmd\version.c)                                             // 打印 version_string 出来
+
+nvedit 
+
+disk
+
+
+
+// ==================================
+setenv
+
+load
+
+ls
+
+fatload
+
+fatls
+
+ext4load
+
+ext4ls
+
+
+
+// ==================================  U_BOOT_CMD  宏解析
+#define U_BOOT_CMD_MKENT_COMPLETE(_name, _maxargs, _rep, _cmd,		\
+				_usage, _help, _comp)			\
+		{ #_name, _maxargs, _rep, _cmd, _usage,			\
+			_CMD_HELP(_help) _CMD_COMPLETE(_comp) }
+
+#define U_BOOT_CMD_MKENT(_name, _maxargs, _rep, _cmd, _usage, _help)	\
+	U_BOOT_CMD_MKENT_COMPLETE(_name, _maxargs, _rep, _cmd,		\
+					_usage, _help, NULL)
+
+#define U_BOOT_CMD_COMPLETE(_name, _maxargs, _rep, _cmd, _usage, _help, _comp) \
+	ll_entry_declare(cmd_tbl_t, _name, cmd) =			\
+		U_BOOT_CMD_MKENT_COMPLETE(_name, _maxargs, _rep, _cmd,	\
+						_usage, _help, _comp);
+
+#define U_BOOT_CMD(_name, _maxargs, _rep, _cmd, _usage, _help)		\
+	U_BOOT_CMD_COMPLETE(_name, _maxargs, _rep, _cmd, _usage, _help, NULL)
+	
+#define ll_entry_declare(_type, _name, _list)				\
+	_type _u_boot_list_2_##_list##_2_##_name __aligned(4)		\
+			__attribute__((unused,				\
+			section(".u_boot_list_2_"#_list"_2_"#_name)))
+			
+# define _CMD_HELP(x) x,
+
+# define _CMD_COMPLETE(x) x,
+
+struct cmd_tbl_s {
+	char		*name;		/* Command Name			*/
+	int		maxargs;	/* maximum number of arguments	*/
+	int		repeatable;	/* autorepeat allowed?		*/
+					/* Implementation function	*/
+	int		(*cmd)(struct cmd_tbl_s *, int, int, char * const []);
+	char		*usage;		/* Usage message	(short)	*/
+#ifdef	CONFIG_SYS_LONGHELP
+	char		*help;		/* Help  message	(long)	*/
+#endif
+#ifdef CONFIG_AUTO_COMPLETE
+	/* do auto completion on the arguments */
+	int		(*complete)(int argc, char * const argv[], char last_char, int maxv, char *cmdv[]);
+#endif
+};
+
+typedef struct cmd_tbl_s	cmd_tbl_t;
+
+U_BOOT_CMD(_name, _maxargs, _rep, _cmd, _usage, _help)
+= U_BOOT_CMD_COMPLETE(_name, _maxargs, _rep, _cmd, _usage, _help, NULL)
+= ll_entry_declare(cmd_tbl_t, _name, cmd) = U_BOOT_CMD_MKENT_COMPLETE(_name, _maxargs, _rep, _cmd, _usage, _help, _comp);
+= _type _u_boot_list_2_##_list##_2_##_name __aligned(4)  __attribute__((unused, section(".u_boot_list_2_"#_list"_2_"#_name))) 
+                                          = U_BOOT_CMD_MKENT_COMPLETE(_name, _maxargs, _rep, _cmd, _usage, _help, _comp);
+= _u_boot_list_2_##_list##_2_##_name = { #_name, _maxargs, _rep, _cmd, _usage, _CMD_HELP(_help) _CMD_COMPLETE(_comp) }
+= _u_boot_list_2_##_list##_2_##_name = { #_name, _maxargs, _rep, _cmd, _usage, _help, _comp, }
+
+
+U_BOOT_CMD(_name, _maxargs, _rep, _cmd, _usage, _help)                                                  // U_BOOT_CMD 宏定义，是 U_BOOT_CMD_COMPLETE 的一个特例
+= _u_boot_list_2_##_list##_2_##_name = { #_name, _maxargs, _rep, _cmd, _usage, _help, _comp, }
+
+U_BOOT_CMD_COMPLETE                                                                                     // U_BOOT_CMD_COMPLETE 多一个参数
+
+// ================================== bootz 解析
+bootz 0x83000000 - 0x84000000
+
+int do_bootz(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+{
+	int ret;
+
+	/* Consume 'bootz' */
+	argc--; argv++;                                                                     调整 argc | argv 参数，去掉 bootz
+
+	if (bootz_start(cmdtp, flag, argc, argv, &images))
+		return 1;
+
+	/*
+	 * We are doing the BOOTM_STATE_LOADOS state ourselves, so must
+	 * disable interrupts ourselves
+	 */
+	bootm_disable_interrupts();
+
+	images.os.os = IH_OS_LINUX;
+	ret = do_bootm_states(cmdtp, flag, argc, argv,
+			      BOOTM_STATE_OS_PREP | BOOTM_STATE_OS_FAKE_GO |
+			      BOOTM_STATE_OS_GO,
+			      &images, 1);
+
+	return ret;
+}
+// --------------------------------
+static int bootz_start(cmd_tbl_t *cmdtp, int flag, int argc,
+			char * const argv[], bootm_headers_t *images)
+{
+	int ret;
+	ulong zi_start, zi_end;
+
+	ret = do_bootm_states(cmdtp, flag, argc, argv, BOOTM_STATE_START,
+			      images, 1);
+
+	/* Setup Linux kernel zImage entry point */
+	if (!argc) {
+		images->ep = load_addr;
+		debug("*  kernel: default image load address = 0x%08lx\n",
+				load_addr);
+	} else {
+		images->ep = simple_strtoul(argv[0], NULL, 16);
+		debug("*  kernel: cmdline image address = 0x%08lx\n",
+			images->ep);
+	}
+
+	ret = bootz_setup(images->ep, &zi_start, &zi_end);
+	if (ret != 0)
+		return 1;
+
+	lmb_reserve(&images->lmb, images->ep, zi_end - zi_start);
+
+	/*
+	 * Handle the BOOTM_STATE_FINDOTHER state ourselves as we do not
+	 * have a header that provide this informaiton.
+	 */
+	if (bootm_find_images(flag, argc, argv))
+		return 1;
+
+#ifdef CONFIG_SECURE_BOOT
+	extern uint32_t authenticate_image(
+			uint32_t ddr_start, uint32_t image_size);
+	if (authenticate_image(images->ep, zi_end - zi_start) == 0) {
+		printf("Authenticate zImage Fail, Please check\n");
+		return 1;
+	}
+#endif
+	return 0;
+}
+// --------------------------------
+
+

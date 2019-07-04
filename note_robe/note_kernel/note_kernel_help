@@ -1,0 +1,56 @@
+// ================================ grep
+grep -rn "__hyp_stub_install" *        // 文件中查找字符：所有文件递归查找，显示行号
+
+
+
+
+
+
+
+
+// ================================
+kernel README
+Documentation/00-INDEX     文件列表
+
+
+
+
+
+
+安装 patch，首先安装 linux-4.X.tar.xz，然后按顺序安装所有大于内核的 patch， 
+
+ cd /usr/src/linux-4.X
+ make O=/home/name/build/kernel menuconfig
+ make O=/home/name/build/kernel
+ sudo make O=/home/name/build/kernel modules_install install
+
+// --------
+ unable to handle kernel paging request at address C0000010
+ Oops: 0002
+ EIP:   0010:XXXXXXXX
+ eax: xxxxxxxx   ebx: xxxxxxxx   ecx: xxxxxxxx   edx: xxxxxxxx
+ esi: xxxxxxxx   edi: xxxxxxxx   ebp: xxxxxxxx
+ ds: xxxx  es: xxxx  fs: xxxx  gs: xxxx
+ Pid: xx, process nr: xx
+ xx xx xx xx xx xx xx xx xx xx
+
+Documentation/oops-tracing.txt
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

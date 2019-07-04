@@ -1,0 +1,822 @@
+FCNTL(2)                                     Linux Programmer's Manual                                    FCNTL(2)
+
+NNAAMMEE
+       fcntl - manipulate file descriptor
+
+SSYYNNOOPPSSIISS
+       ##iinncclluuddee <<uunniissttdd..hh>>
+       ##iinncclluuddee <<ffccnnttll..hh>>
+
+       iinntt ffccnnttll((iinntt _f_d,, iinntt _c_m_d,, ...... //** _a_r_g **// ));;
+
+DDEESSCCRRIIPPTTIIOONN
+       ffccnnttll()  performs  one  of the operations described below on the open file descriptor _f_d.  The operation is
+       determined by _c_m_d.
+
+       ffccnnttll() can take an optional third argument.  Whether or not this argument is  required  is  determined  by
+       _c_m_d.   The  required  argument  type  is  indicated  in parentheses after each _c_m_d name (in most cases, the
+       required type is _i_n_t, and we identify the argument using the name _a_r_g), or _v_o_i_d is specified if  the  argu‐
+       ment is not required.
+
+       Certain  of the operations below are supported only since a particular Linux kernel version.  The preferred
+       method of checking whether the host kernel supports a particular operation is to invoke  ffccnnttll()  with  the
+       desired  _c_m_d  value  and then test whether the call failed with EEIINNVVAALL, indicating that the kernel does not
+       recognize this value.
+
+   DDuupplliiccaattiinngg aa ffiillee ddeessccrriippttoorr
+       FF__DDUUPPFFDD (_i_n_t)
+              Duplicate the file descriptor _f_d using the lowest-numbered available file descriptor greater than or
+              equal to _a_r_g.  This is different from dduupp22(2), which uses exactly the file descriptor specified.
+
+              On success, the new file descriptor is returned.
+
+              See dduupp(2) for further details.
+
+       FF__DDUUPPFFDD__CCLLOOEEXXEECC (_i_n_t; since Linux 2.6.24)
+              As  for  FF__DDUUPPFFDD,  but  additionally  set  the close-on-exec flag for the duplicate file descriptor.
+              Specifying this flag permits a program to avoid an additional ffccnnttll() FF__SSEETTFFDD operation to  set  the
+              FFDD__CCLLOOEEXXEECC flag.  For an explanation of why this flag is useful, see the description of OO__CCLLOOEEXXEECC in
+              ooppeenn(2).
+
+   FFiillee ddeessccrriippttoorr ffllaaggss
+       The following commands manipulate the flags associated with a file descriptor.  Currently,  only  one  such
+       flag  is  defined:  FFDD__CCLLOOEEXXEECC,  the close-on-exec flag.  If the FFDD__CCLLOOEEXXEECC bit is set, the file descriptor
+       will automatically be closed during a successful eexxeeccvvee(2).  (If the eexxeeccvvee(2) fails, the  file  descriptor
+       is left open.)  If the FFDD__CCLLOOEEXXEECC bit is not set, the file descriptor will remain open across an eexxeeccvvee(2).
+
+       FF__GGEETTFFDD (_v_o_i_d)
+              Return (as the function result) the file descriptor flags; _a_r_g is ignored.
+
+       FF__SSEETTFFDD (_i_n_t)
+              Set the file descriptor flags to the value specified by _a_r_g.
+
+       In  multithreaded programs, using ffccnnttll() FF__SSEETTFFDD to set the close-on-exec flag at the same time as another
+       thread performs a ffoorrkk(2) plus eexxeeccvvee(2) is vulnerable to a race condition that  may  unintentionally  leak
+       the file descriptor to the program executed in the child process.  See the discussion of the OO__CCLLOOEEXXEECC flag
+       in ooppeenn(2) for details and a remedy to the problem.
+
+   FFiillee ssttaattuuss ffllaaggss
+       Each open file description has certain associated status flags, initialized by ooppeenn(2) and  possibly  modi‐
+       fied  by  ffccnnttll().   Duplicated file descriptors (made with dduupp(2), ffccnnttll(F_DUPFD), ffoorrkk(2), etc.) refer to
+       the same open file description, and thus share the same file status flags.
+
+       The file status flags and their semantics are described in ooppeenn(2).
+
+       FF__GGEETTFFLL (_v_o_i_d)
+              Return (as the function result) the file access mode and the file status flags; _a_r_g is ignored.
+
+       FF__SSEETTFFLL (_i_n_t)
+              Set the file status flags to the value specified by _a_r_g.   File  access  mode  (OO__RRDDOONNLLYY,  OO__WWRROONNLLYY,
+              OO__RRDDWWRR)  and  file creation flags (i.e., OO__CCRREEAATT, OO__EEXXCCLL, OO__NNOOCCTTTTYY, OO__TTRRUUNNCC) in _a_r_g are ignored.  On
+              Linux, this command can change only the  OO__AAPPPPEENNDD,  OO__AASSYYNNCC,  OO__DDIIRREECCTT,  OO__NNOOAATTIIMMEE,  and  OO__NNOONNBBLLOOCCKK
+              flags.  It is not possible to change the OO__DDSSYYNNCC and OO__SSYYNNCC flags; see BUGS, below.
+
+   AAddvviissoorryy rreeccoorrdd lloocckkiinngg
+       Linux  implements  traditional  ("process-associated")  UNIX record locks, as standardized by POSIX.  For a
+       Linux-specific alternative with better semantics, see the discussion of open file description locks below.
+
+       FF__SSEETTLLKK, FF__SSEETTLLKKWW, and FF__GGEETTLLKK are used to acquire, release, and test for the  existence  of  record  locks
+       (also  known as byte-range, file-segment, or file-region locks).  The third argument, _l_o_c_k, is a pointer to
+       a structure that has at least the following fields (in unspecified order).
+
+           struct flock {
+               ...
+               short l_type;    /* Type of lock: F_RDLCK,
+                                   F_WRLCK, F_UNLCK */
+               short l_whence;  /* How to interpret l_start:
+                                   SEEK_SET, SEEK_CUR, SEEK_END */
+               off_t l_start;   /* Starting offset for lock */
+               off_t l_len;     /* Number of bytes to lock */
+               pid_t l_pid;     /* PID of process blocking our lock
+                                   (set by F_GETLK and F_OFD_GETLK) */
+               ...
+           };
+
+       The _l___w_h_e_n_c_e, _l___s_t_a_r_t, and _l___l_e_n fields of this structure specify the range  of  bytes  we  wish  to  lock.
+       Bytes past the end of the file may be locked, but not bytes before the start of the file.
+
+       _l___s_t_a_r_t  is  the starting offset for the lock, and is interpreted relative to either: the start of the file
+       (if _l___w_h_e_n_c_e is SSEEEEKK__SSEETT); the current file offset (if _l___w_h_e_n_c_e is SSEEEEKK__CCUURR); or the end of  the  file  (if
+       _l___w_h_e_n_c_e  is  SSEEEEKK__EENNDD).  In the final two cases, _l___s_t_a_r_t can be a negative number provided the offset does
+       not lie before the start of the file.
+
+       _l___l_e_n specifies the number of bytes to be locked.  If _l___l_e_n is positive, then the range to be locked covers
+       bytes  _l___s_t_a_r_t  up  to and including _l___s_t_a_r_t+_l___l_e_n-1.  Specifying 0 for _l___l_e_n has the special meaning: lock
+       all bytes starting at the location specified by _l___w_h_e_n_c_e and _l___s_t_a_r_t through to the end of file, no  matter
+       how large the file grows.
+
+       POSIX.1-2001 allows (but does not require) an implementation to support a negative _l___l_e_n value; if _l___l_e_n is
+       negative, the interval described by _l_o_c_k covers bytes _l___s_t_a_r_t+_l___l_e_n up to and including _l___s_t_a_r_t-1.  This is
+       supported by Linux since kernel versions 2.4.21 and 2.5.49.
+
+       The  _l___t_y_p_e field can be used to place a read (FF__RRDDLLCCKK) or a write (FF__WWRRLLCCKK) lock on a file.  Any number of
+       processes may hold a read lock (shared lock) on a file region, but only one process may hold a  write  lock
+       (exclusive lock).  An exclusive lock excludes all other locks, both shared and exclusive.  A single process
+       can hold only one type of lock on a file region; if a new lock is applied to an already-locked region, then
+       the  existing  lock is converted to the new lock type.  (Such conversions may involve splitting, shrinking,
+       or coalescing with an existing lock if the byte range specified by the new lock does not precisely coincide
+       with the range of the existing lock.)
+
+       FF__SSEETTLLKK (_s_t_r_u_c_t _f_l_o_c_k _*)
+              Acquire a lock (when _l___t_y_p_e is FF__RRDDLLCCKK or FF__WWRRLLCCKK) or release a lock (when _l___t_y_p_e is FF__UUNNLLCCKK) on the
+              bytes specified by the _l___w_h_e_n_c_e, _l___s_t_a_r_t, and _l___l_e_n fields of _l_o_c_k.  If a conflicting lock  is  held
+              by another process, this call returns -1 and sets _e_r_r_n_o to EEAACCCCEESS or EEAAGGAAIINN.  (The error returned in
+              this case differs across implementations, so POSIX requires a portable application to check for both
+              errors.)
+
+       FF__SSEETTLLKKWW (_s_t_r_u_c_t _f_l_o_c_k _*)
+              As  for  FF__SSEETTLLKK,  but  if  a  conflicting  lock  is held on the file, then wait for that lock to be
+              released.  If a signal is caught while waiting, then the call is interrupted and (after  the  signal
+              handler  has  returned)  returns  immediately (with return value -1 and _e_r_r_n_o set to EEIINNTTRR; see ssiigg‐‐
+              nnaall(7)).
+
+       FF__GGEETTLLKK (_s_t_r_u_c_t _f_l_o_c_k _*)
+              On input to this call, _l_o_c_k describes a lock we would like to place on the file.  If the lock  could
+              be  placed,  ffccnnttll() does not actually place it, but returns FF__UUNNLLCCKK in the _l___t_y_p_e field of _l_o_c_k and
+              leaves the other fields of the structure unchanged.
+
+              If one or more incompatible locks would prevent this lock being placed, then ffccnnttll() returns details
+              about  one  of  those locks in the _l___t_y_p_e, _l___w_h_e_n_c_e, _l___s_t_a_r_t, and _l___l_e_n fields of _l_o_c_k.  If the con‐
+              flicting lock is a traditional (process-associated) record lock, then the _l___p_i_d field is set to  the
+              PID  of  the  process  holding that lock.  If the conflicting lock is an open file description lock,
+              then _l___p_i_d is set to -1.  Note that the returned information may already be out of date by the  time
+              the caller inspects it.
+
+       In  order  to  place  a read lock, _f_d must be open for reading.  In order to place a write lock, _f_d must be
+       open for writing.  To place both types of lock, open a file read-write.
+
+       When placing locks with FF__SSEETTLLKKWW, the kernel detects _d_e_a_d_l_o_c_k_s, whereby two or more  processes  have  their
+       lock  requests mutually blocked by locks held by the other processes.  For example, suppose process A holds
+       a write lock on byte 100 of a file, and process B holds a write lock on byte 200.   If  each  process  then
+       attempts to lock the byte already locked by the other process using FF__SSEETTLLKKWW, then, without deadlock detec‐
+       tion, both processes would remain blocked indefinitely.  When the kernel detects such deadlocks, it  causes
+       one  of  the blocking lock requests to immediately fail with the error EEDDEEAADDLLKK; an application that encoun‐
+       ters such an error should release some of its locks to allow other applications to proceed before  attempt‐
+       ing  regain  the  locks  that  it  requires.  Circular deadlocks involving more than two processes are also
+       detected.  Note, however, that there are limitations to  the  kernel's  deadlock-detection  algorithm;  see
+       BUGS.
+
+       As  well  as being removed by an explicit FF__UUNNLLCCKK, record locks are automatically released when the process
+       terminates.
+
+       Record locks are not inherited by a child created via ffoorrkk(2), but are preserved across an eexxeeccvvee(2).
+
+       Because of the buffering performed by the ssttddiioo(3) library, the use of record locking with routines in that
+       package should be avoided; use rreeaadd(2) and wwrriittee(2) instead.
+
+       The  record  locks  described above are associated with the process (unlike the open file description locks
+       described below).  This has some unfortunate consequences:
+
+       *  If a process closes _a_n_y file descriptor referring to a file, then all of the  process's  locks  on  that
+          file  are released, regardless of the file descriptor(s) on which the locks were obtained.  This is bad:
+          it means that a process can lose its locks on a file such as _/_e_t_c_/_p_a_s_s_w_d or _/_e_t_c_/_m_t_a_b when for some rea‐
+          son a library function decides to open, read, and close the same file.
+
+       *  The  threads in a process share locks.  In other words, a multithreaded program can't use record locking
+          to ensure that threads don't simultaneously access the same region of a file.
+
+       Open file description locks solve both of these problems.
+
+   OOppeenn ffiillee ddeessccrriippttiioonn lloocckkss ((nnoonn--PPOOSSIIXX))
+       Open file description locks are advisory byte-range locks whose operation is in most respects identical  to
+       the  traditional record locks described above.  This lock type is Linux-specific, and available since Linux
+       3.15.  (There is a proposal with the Austin Group to include  this  lock  type  in  the  next  revision  of
+       POSIX.1.)  For an explanation of open file descriptions, see ooppeenn(2).
+
+       The principal difference between the two lock types is that whereas traditional record locks are associated
+       with a process, open file description locks are associated with the open file description on which they are
+       acquired,  much  like  locks  acquired with fflloocckk(2).  Consequently (and unlike traditional advisory record
+       locks), open file description locks are inherited across ffoorrkk(2) (and cclloonnee(2) with CCLLOONNEE__FFIILLEESS),  and  are
+       only  automatically  released  on the last close of the open file description, instead of being released on
+       any close of the file.
+
+       Conflicting lock combinations (i.e., a read lock and a write lock or two write locks) where one lock is  an
+       open  file description lock and the other is a traditional record lock conflict even when they are acquired
+       by the same process on the same file descriptor.
+
+       Open file description locks placed via the same open file description (i.e., via the same file  descriptor,
+       or  via  a  duplicate  of  the  file descriptor created by ffoorrkk(2), dduupp(2), ffccnnttll() FF__DDUUPPFFDD, and so on) are
+       always compatible: if a new lock is placed on an already locked region, then the existing lock is converted
+       to the new lock type.  (Such conversions may result in splitting, shrinking, or coalescing with an existing
+       lock as discussed above.)
+
+       On the other hand, open file description locks may conflict with each other when they are acquired via dif‐
+       ferent  open file descriptions.  Thus, the threads in a multithreaded program can use open file description
+       locks to synchronize access to a file region by having each thread perform its own ooppeenn(2) on the file  and
+       applying locks via the resulting file descriptor.
+
+       As  with  traditional  advisory locks, the third argument to ffccnnttll(), _l_o_c_k, is a pointer to an _f_l_o_c_k struc‐
+       ture.  By contrast with traditional record locks, the _l___p_i_d field of that structure must  be  set  to  zero
+       when using the commands described below.
+
+       The  commands  for  working  with  open file description locks are analogous to those used with traditional
+       locks:
+
+       FF__OOFFDD__SSEETTLLKK (_s_t_r_u_c_t _f_l_o_c_k _*)
+              Acquire an open file description lock (when _l___t_y_p_e is FF__RRDDLLCCKK or FF__WWRRLLCCKK) or release  an  open  file
+              description lock (when _l___t_y_p_e is FF__UUNNLLCCKK) on the bytes specified by the _l___w_h_e_n_c_e, _l___s_t_a_r_t, and _l___l_e_n
+              fields of _l_o_c_k.  If a conflicting lock is held by another process, this call  returns  -1  and  sets
+              _e_r_r_n_o to EEAAGGAAIINN.
+
+       FF__OOFFDD__SSEETTLLKKWW (_s_t_r_u_c_t _f_l_o_c_k _*)
+              As  for  FF__OOFFDD__SSEETTLLKK,  but  if a conflicting lock is held on the file, then wait for that lock to be
+              released.  If a signal is caught while waiting, then the call is interrupted and (after  the  signal
+              handler  has  returned)  returns  immediately (with return value -1 and _e_r_r_n_o set to EEIINNTTRR; see ssiigg‐‐
+              nnaall(7)).
+
+       FF__OOFFDD__GGEETTLLKK (_s_t_r_u_c_t _f_l_o_c_k _*)
+              On input to this call, _l_o_c_k describes an open file description lock we would like to  place  on  the
+              file.   If  the lock could be placed, ffccnnttll() does not actually place it, but returns FF__UUNNLLCCKK in the
+              _l___t_y_p_e field of _l_o_c_k and leaves the other fields of the structure unchanged.  If one or more  incom‐
+              patible  locks  would  prevent  this  lock  being  placed, then details about one of these locks are
+              returned via _l_o_c_k, as described above for FF__GGEETTLLKK.
+
+       In the current implementation, no deadlock detection is performed for open file description  locks.   (This
+       contrasts with process-associated record locks, for which the kernel does perform deadlock detection.)
+
+   MMaannddaattoorryy lloocckkiinngg
+       _W_a_r_n_i_n_g:  the  Linux  implementation of mandatory locking is unreliable.  See BUGS below.  Because of these
+       bugs, and the fact that the feature is believed to be little used, since Linux 4.5, mandatory  locking  has
+       been made an optional feature, governed by a configuration option (CCOONNFFIIGG__MMAANNDDAATTOORRYY__FFIILLEE__LLOOCCKKIINNGG).  This is
+       an initial step toward removing this feature completely.
+
+       By default, both traditional (process-associated) and open file  description  record  locks  are  advisory.
+       Advisory locks are not enforced and are useful only between cooperating processes.
+
+       Both lock types can also be mandatory.  Mandatory locks are enforced for all processes.  If a process tries
+       to perform an incompatible access (e.g., rreeaadd(2) or wwrriittee(2)) on a file region  that  has  an  incompatible
+       mandatory  lock,  then  the  result  depends  upon whether the OO__NNOONNBBLLOOCCKK flag is enabled for its open file
+       description.  If the OO__NNOONNBBLLOOCCKK flag is not enabled, then the system call is  blocked  until  the  lock  is
+       removed or converted to a mode that is compatible with the access.  If the OO__NNOONNBBLLOOCCKK flag is enabled, then
+       the system call fails with the error EEAAGGAAIINN.
+
+       To make use of mandatory locks, mandatory locking must be enabled both on the filesystem that contains  the
+       file  to  be  locked,  and  on the file itself.  Mandatory locking is enabled on a filesystem using the "-o
+       mand" option to mmoouunntt(8), or the MMSS__MMAANNDDLLOOCCKK flag for mmoouunntt(2).  Mandatory locking is enabled on a file  by
+       disabling  group  execute permission on the file and enabling the set-group-ID permission bit (see cchhmmoodd(1)
+       and cchhmmoodd(2)).
+
+       Mandatory locking is not specified by POSIX.  Some other systems also support mandatory  locking,  although
+       the details of how to enable it vary across systems.
+
+   LLoosstt lloocckkss
+       When  an advisory lock is obtained on a networked filesystem such as NFS it is possible that the lock might
+       get lost.  This may happen due to administrative action on the server, or due to a network partition (i.e.,
+       loss  of  network  connectivity  with the server) which lasts long enough for the server to assume that the
+       client is no longer functioning.
+
+       When the filesystem determines that a lock has been lost, future rreeaadd(2) or wwrriittee(2) requests may fail with
+       the  error EEIIOO.  This error will persist until the lock is removed or the file descriptor is closed.  Since
+       Linux 3.12, this happens at least for NFSv4 (including all minor versions).
+
+       Some versions of UNIX send a signal (SSIIGGLLOOSSTT) in this circumstance.  Linux does not define this signal, and
+       does not provide any asynchronous notification of lost locks.
+
+   MMaannaaggiinngg ssiiggnnaallss
+       FF__GGEETTOOWWNN,  FF__SSEETTOOWWNN,  FF__GGEETTOOWWNN__EEXX,  FF__SSEETTOOWWNN__EEXX,  FF__GGEETTSSIIGG and FF__SSEETTSSIIGG are used to manage I/O availability
+       signals:
+
+       FF__GGEETTOOWWNN (_v_o_i_d)
+              Return (as the function result) the process ID or process group currently receiving SSIIGGIIOO and SSIIGGUURRGG
+              signals  for  events  on  file  descriptor _f_d.  Process IDs are returned as positive values; process
+              group IDs are returned as negative values (but see BUGS below).  _a_r_g is ignored.
+
+       FF__SSEETTOOWWNN (_i_n_t)
+              Set the process ID or process group ID that will receive SSIIGGIIOO and SSIIGGUURRGG signals for events on  the
+              file  descriptor  _f_d.   The target process or process group ID is specified in _a_r_g.  A process ID is
+              specified as a positive value; a process group ID is specified as a negative value.  Most  commonly,
+              the calling process specifies itself as the owner (that is, _a_r_g is specified as ggeettppiidd(2)).
+
+              As well as setting the file descriptor owner, one must also enable generation of signals on the file
+              descriptor.  This is done by using the ffccnnttll() FF__SSEETTFFLL command to set the OO__AASSYYNNCC file  status  flag
+              on  the file descriptor.  Subsequently, a SSIIGGIIOO signal is sent whenever input or output becomes pos‐
+              sible on the file descriptor.  The ffccnnttll() FF__SSEETTSSIIGG command can be used to obtain delivery of a sig‐
+              nal other than SSIIGGIIOO.
+
+              Sending  a  signal to the owner process (group) specified by FF__SSEETTOOWWNN is subject to the same permis‐
+              sions checks as are described for kkiillll(2), where  the  sending  process  is  the  one  that  employs
+              FF__SSEETTOOWWNN  (but  see  BUGS  below).  If this permission check fails, then the signal is silently dis‐
+              carded.  _N_o_t_e: The FF__SSEETTOOWWNN operation records the caller's credentials at the time  of  the  ffccnnttll()
+              call, and it is these saved credentials that are used for the permission checks.
+
+              If  the file descriptor _f_d refers to a socket, FF__SSEETTOOWWNN also selects the recipient of SSIIGGUURRGG signals
+              that are delivered when out-of-band data arrives on that socket.  (SSIIGGUURRGG is sent in  any  situation
+              where sseelleecctt(2) would report the socket as having an "exceptional condition".)
+
+              The following was true in 2.6.x kernels up to and including kernel 2.6.11:
+
+                     If  a  nonzero value is given to FF__SSEETTSSIIGG in a multithreaded process running with a threading
+                     library that supports thread groups (e.g., NPTL), then a positive value given to FF__SSEETTOOWWNN has
+                     a  different  meaning:  instead  of  being  a process ID identifying a whole process, it is a
+                     thread ID identifying a specific thread within a process.  Consequently, it may be  necessary
+                     to  pass  FF__SSEETTOOWWNN  the result of ggeettttiidd(2) instead of ggeettppiidd(2) to get sensible results when
+                     FF__SSEETTSSIIGG is used.  (In current Linux threading implementations, a main thread's thread ID  is
+                     the  same  as its process ID.  This means that a single-threaded program can equally use ggeett‐‐
+                     ttiidd(2) or ggeettppiidd(2) in this scenario.)  Note, however, that the statements in this  paragraph
+                     do  not apply to the SSIIGGUURRGG signal generated for out-of-band data on a socket: this signal is
+                     always sent to either a process or a process group, depending on the value given to FF__SSEETTOOWWNN.
+
+              The above behavior was accidentally dropped in Linux 2.6.12, and  won't  be  restored.   From  Linux
+              2.6.32 onward, use FF__SSEETTOOWWNN__EEXX to target SSIIGGIIOO and SSIIGGUURRGG signals at a particular thread.
+
+       FF__GGEETTOOWWNN__EEXX (_s_t_r_u_c_t _f___o_w_n_e_r___e_x _*) (since Linux 2.6.32)
+              Return  the  current  file descriptor owner settings as defined by a previous FF__SSEETTOOWWNN__EEXX operation.
+              The information is returned in the structure pointed to by _a_r_g, which has the following form:
+
+                  struct f_owner_ex {
+                      int   type;
+                      pid_t pid;
+                  };
+
+              The _t_y_p_e field will have one of the values FF__OOWWNNEERR__TTIIDD, FF__OOWWNNEERR__PPIIDD, or FF__OOWWNNEERR__PPGGRRPP.  The _p_i_d field
+              is  a  positive  integer representing a thread ID, process ID, or process group ID.  See FF__SSEETTOOWWNN__EEXX
+              for more details.
+
+       FF__SSEETTOOWWNN__EEXX (_s_t_r_u_c_t _f___o_w_n_e_r___e_x _*) (since Linux 2.6.32)
+              This operation performs a similar task to FF__SSEETTOOWWNN.  It allows the caller to direct I/O availability
+              signals to a specific thread, process, or process group.  The caller specifies the target of signals
+              via _a_r_g, which is a pointer to a _f___o_w_n_e_r___e_x structure.  The _t_y_p_e field has one of the following val‐
+              ues, which define how _p_i_d is interpreted:
+
+              FF__OOWWNNEERR__TTIIDD
+                     Send  the  signal  to the thread whose thread ID (the value returned by a call to cclloonnee(2) or
+                     ggeettttiidd(2)) is specified in _p_i_d.
+
+              FF__OOWWNNEERR__PPIIDD
+                     Send the signal to the process whose ID is specified in _p_i_d.
+
+              FF__OOWWNNEERR__PPGGRRPP
+                     Send the signal to the process group whose ID is specified in _p_i_d.  (Note that,  unlike  with
+                     FF__SSEETTOOWWNN, a process group ID is specified as a positive value here.)
+
+       FF__GGEETTSSIIGG (_v_o_i_d)
+              Return  (as  the function result) the signal sent when input or output becomes possible.  A value of
+              zero means SSIIGGIIOO is sent.  Any other value (including SSIIGGIIOO) is the signal sent instead, and in this
+              case  additional  info  is  available  to  the  signal handler if installed with SSAA__SSIIGGIINNFFOO.  _a_r_g is
+              ignored.
+
+       FF__SSEETTSSIIGG (_i_n_t)
+              Set the signal sent when input or output becomes possible to the value given in  _a_r_g.   A  value  of
+              zero  means  to  send  the default SSIIGGIIOO signal.  Any other value (including SSIIGGIIOO) is the signal to
+              send instead, and in this case additional info is available to the signal handler if installed  with
+              SSAA__SSIIGGIINNFFOO.
+
+              By  using  FF__SSEETTSSIIGG  with a nonzero value, and setting SSAA__SSIIGGIINNFFOO for the signal handler (see ssiiggaacc‐‐
+              ttiioonn(2)), extra information about I/O events is passed to the handler in a _s_i_g_i_n_f_o___t structure.   If
+              the  _s_i___c_o_d_e field indicates the source is SSII__SSIIGGIIOO, the _s_i___f_d field gives the file descriptor asso‐
+              ciated with the event.  Otherwise, there is no indication which file descriptors  are  pending,  and
+              you should use the usual mechanisms (sseelleecctt(2), ppoollll(2), rreeaadd(2) with OO__NNOONNBBLLOOCCKK set etc.) to deter‐
+              mine which file descriptors are available for I/O.
+
+              Note that the file descriptor provided in _s_i___f_d is the one that was specified  during  the  FF__SSEETTSSIIGG
+              operation.   This  can lead to an unusual corner case.  If the file descriptor is duplicated (dduupp(2)
+              or similar), and the original file descriptor is closed, then I/O events will continue to be  gener‐
+              ated, but the _s_i___f_d field will contain the number of the now closed file descriptor.
+
+              By  selecting  a  real  time signal (value >= SSIIGGRRTTMMIINN), multiple I/O events may be queued using the
+              same signal numbers.  (Queuing is dependent on available memory.)  Extra information is available if
+              SSAA__SSIIGGIINNFFOO is set for the signal handler, as above.
+
+              Note  that  Linux imposes a limit on the number of real-time signals that may be queued to a process
+              (see ggeettrrlliimmiitt(2) and ssiiggnnaall(7)) and if this limit is reached, then the kernel reverts to delivering
+              SSIIGGIIOO, and this signal is delivered to the entire process rather than to a specific thread.
+
+       Using  these  mechanisms, a program can implement fully asynchronous I/O without using sseelleecctt(2) or ppoollll(2)
+       most of the time.
+
+       The use of OO__AASSYYNNCC is specific to BSD and Linux.  The only  use  of  FF__GGEETTOOWWNN  and  FF__SSEETTOOWWNN  specified  in
+       POSIX.1  is in conjunction with the use of the SSIIGGUURRGG signal on sockets.  (POSIX does not specify the SSIIGGIIOO
+       signal.)  FF__GGEETTOOWWNN__EEXX, FF__SSEETTOOWWNN__EEXX, FF__GGEETTSSIIGG, and FF__SSEETTSSIIGG are Linux-specific.  POSIX has asynchronous  I/O
+       and  the _a_i_o___s_i_g_e_v_e_n_t structure to achieve similar things; these are also available in Linux as part of the
+       GNU C Library (Glibc).
+
+   LLeeaasseess
+       FF__SSEETTLLEEAASSEE and FF__GGEETTLLEEAASSEE (Linux 2.4 onward) are used (respectively) to establish a new lease, and retrieve
+       the  current  lease, on the open file description referred to by the file descriptor _f_d.  A file lease pro‐
+       vides a mechanism whereby the process holding the lease (the "lease holder") is notified (via delivery of a
+       signal)  when  a process (the "lease breaker") tries to ooppeenn(2) or ttrruunnccaattee(2) the file referred to by that
+       file descriptor.
+
+       FF__SSEETTLLEEAASSEE (_i_n_t)
+              Set or remove a file lease according to which of the following values is specified  in  the  integer
+              _a_r_g:
+
+              FF__RRDDLLCCKK
+                     Take  out  a read lease.  This will cause the calling process to be notified when the file is
+                     opened for writing or is truncated.  A read lease can be placed only  on  a  file  descriptor
+                     that is opened read-only.
+
+              FF__WWRRLLCCKK
+                     Take  out  a  write lease.  This will cause the caller to be notified when the file is opened
+                     for reading or writing or is truncated.  A write lease may be placed on a file only if  there
+                     are no other open file descriptors for the file.
+
+              FF__UUNNLLCCKK
+                     Remove our lease from the file.
+
+       Leases are associated with an open file description (see ooppeenn(2)).  This means that duplicate file descrip‐
+       tors (created by, for example, ffoorrkk(2) or dduupp(2)) refer to the same lease, and this lease may  be  modified
+       or  released  using  any  of  these  descriptors.  Furthermore, the lease is released by either an explicit
+       FF__UUNNLLCCKK operation on any of these duplicate file descriptors, or when all such file descriptors  have  been
+       closed.
+
+       Leases may be taken out only on regular files.  An unprivileged process may take out a lease only on a file
+       whose UID (owner) matches the filesystem UID of the process.  A process with the CCAAPP__LLEEAASSEE  capability  may
+       take out leases on arbitrary files.
+
+       FF__GGEETTLLEEAASSEE (_v_o_i_d)
+              Indicates  what type of lease is associated with the file descriptor _f_d by returning either FF__RRDDLLCCKK,
+              FF__WWRRLLCCKK, or FF__UUNNLLCCKK, indicating, respectively, a read lease , a write lease, or no  lease.   _a_r_g  is
+              ignored.
+
+       When  a process (the "lease breaker") performs an ooppeenn(2) or ttrruunnccaattee(2) that conflicts with a lease estab‐
+       lished via FF__SSEETTLLEEAASSEE, the system call is blocked by the kernel and the kernel notifies the lease holder by
+       sending it a signal (SSIIGGIIOO by default).  The lease holder should respond to receipt of this signal by doing
+       whatever cleanup is required in preparation for the file to be accessed by another process (e.g.,  flushing
+       cached  buffers)  and  then  either  remove  or  downgrade  its lease.  A lease is removed by performing an
+       FF__SSEETTLLEEAASSEE command specifying _a_r_g as FF__UUNNLLCCKK.  If the lease holder currently holds a  write  lease  on  the
+       file,  and the lease breaker is opening the file for reading, then it is sufficient for the lease holder to
+       downgrade the lease to a read lease.  This is done by performing an FF__SSEETTLLEEAASSEE command  specifying  _a_r_g  as
+       FF__RRDDLLCCKK.
+
+       If  the  lease  holder  fails  to  downgrade  or remove the lease within the number of seconds specified in
+       _/_p_r_o_c_/_s_y_s_/_f_s_/_l_e_a_s_e_-_b_r_e_a_k_-_t_i_m_e, then the kernel forcibly removes or downgrades the lease holder's lease.
+
+       Once a lease break has been initiated, FF__GGEETTLLEEAASSEE returns the target lease type (either FF__RRDDLLCCKK or FF__UUNNLLCCKK,
+       depending on what would be compatible with the lease breaker) until the lease holder voluntarily downgrades
+       or removes the lease or the kernel forcibly does so after the lease break timer expires.
+
+       Once the lease has been voluntarily or forcibly removed or downgraded, and assuming the lease  breaker  has
+       not unblocked its system call, the kernel permits the lease breaker's system call to proceed.
+
+       If  the  lease breaker's blocked ooppeenn(2) or ttrruunnccaattee(2) is interrupted by a signal handler, then the system
+       call fails with the error EEIINNTTRR, but the other steps still occur as described above.  If the lease  breaker
+       is  killed  by  a  signal  while  blocked  in  ooppeenn(2)  or ttrruunnccaattee(2), then the other steps still occur as
+       described above.  If the lease breaker specifies the OO__NNOONNBBLLOOCCKK flag when calling ooppeenn(2),  then  the  call
+       immediately fails with the error EEWWOOUULLDDBBLLOOCCKK, but the other steps still occur as described above.
+
+       The  default  signal  used  to notify the lease holder is SSIIGGIIOO, but this can be changed using the FF__SSEETTSSIIGG
+       command to ffccnnttll().  If a FF__SSEETTSSIIGG command is performed (even one specifying SSIIGGIIOO), and the signal handler
+       is  established  using  SSAA__SSIIGGIINNFFOO, then the handler will receive a _s_i_g_i_n_f_o___t structure as its second argu‐
+       ment, and the _s_i___f_d field of this argument will hold the file descriptor of the leased file that  has  been
+       accessed by another process.  (This is useful if the caller holds leases against multiple files.)
+
+   FFiillee aanndd ddiirreeccttoorryy cchhaannggee nnoottiiffiiccaattiioonn ((ddnnoottiiffyy))
+       FF__NNOOTTIIFFYY (_i_n_t)
+              (Linux  2.4  onward)  Provide  notification when the directory referred to by _f_d or any of the files
+              that it contains is changed.  The events to be notified are specified in _a_r_g, which is  a  bit  mask
+              specified by ORing together zero or more of the following bits:
+
+              DDNN__AACCCCEESSSS   A file was accessed (rreeaadd(2), pprreeaadd(2), rreeaaddvv(2), and similar)
+              DDNN__MMOODDIIFFYY   A file was modified (wwrriittee(2), ppwwrriittee(2), wwrriitteevv(2), ttrruunnccaattee(2), ffttrruunnccaattee(2), and sim‐
+                          ilar).
+              DDNN__CCRREEAATTEE   A  file  was  created  (ooppeenn(2),  ccrreeaatt(2),  mmkknnoodd(2),  mmkkddiirr(2),  lliinnkk(2),  ssyymmlliinnkk(2),
+                          rreennaammee(2) into this directory).
+              DDNN__DDEELLEETTEE   A file was unlinked (uunnlliinnkk(2), rreennaammee(2) to another directory, rrmmddiirr(2)).
+              DDNN__RREENNAAMMEE   A file was renamed within this directory (rreennaammee(2)).
+              DDNN__AATTTTRRIIBB   The  attributes  of a file were changed (cchhoowwnn(2), cchhmmoodd(2), uuttiimmee(2), uuttiimmeennssaatt(2), and
+                          similar).
+
+              (In order to obtain these definitions, the __GGNNUU__SSOOUURRCCEE feature test macro  must  be  defined  before
+              including _a_n_y header files.)
+
+              Directory notifications are normally "one-shot", and the application must reregister to receive fur‐
+              ther notifications.  Alternatively, if DDNN__MMUULLTTIISSHHOOTT is  included  in  _a_r_g,  then  notification  will
+              remain in effect until explicitly removed.
+
+              A  series  of FF__NNOOTTIIFFYY requests is cumulative, with the events in _a_r_g being added to the set already
+              monitored.  To disable notification of all events, make an FF__NNOOTTIIFFYY call specifying _a_r_g as 0.
+
+              Notification occurs via delivery of a signal.  The default signal is SSIIGGIIOO, but this can be  changed
+              using  the FF__SSEETTSSIIGG command to ffccnnttll().  (Note that SSIIGGIIOO is one of the nonqueuing standard signals;
+              switching to the use of a real-time signal means that multiple notifications can be  queued  to  the
+              process.)  In the latter case, the signal handler receives a _s_i_g_i_n_f_o___t structure as its second argu‐
+              ment (if the handler was established using SSAA__SSIIGGIINNFFOO) and the _s_i___f_d field of  this  structure  con‐
+              tains the file descriptor which generated the notification (useful when establishing notification on
+              multiple directories).
+
+              Especially when using DDNN__MMUULLTTIISSHHOOTT, a real time signal should be used for notification, so that mul‐
+              tiple notifications can be queued.
+
+              NNOOTTEE::  New applications should use the _i_n_o_t_i_f_y interface (available since kernel 2.6.13), which pro‐
+              vides a much superior interface for obtaining notifications of filesystem events.  See iinnoottiiffyy(7).
+
+   CChhaannggiinngg tthhee ccaappaacciittyy ooff aa ppiippee
+       FF__SSEETTPPIIPPEE__SSZZ (_i_n_t; since Linux 2.6.35)
+              Change the capacity of the pipe referred to by _f_d to be at least _a_r_g bytes.  An unprivileged process
+              can  adjust  the  pipe  capacity  to any value between the system page size and the limit defined in
+              _/_p_r_o_c_/_s_y_s_/_f_s_/_p_i_p_e_-_m_a_x_-_s_i_z_e (see pprroocc(5)).  Attempts to set the pipe capacity below the page size are
+              silently  rounded up to the page size.  Attempts by an unprivileged process to set the pipe capacity
+              above  the  limit  in  _/_p_r_o_c_/_s_y_s_/_f_s_/_p_i_p_e_-_m_a_x_-_s_i_z_e  yield  the  error  EEPPEERRMM;  a  privileged  process
+              (CCAAPP__SSYYSS__RREESSOOUURRCCEE) can override the limit.
+
+              When  allocating  the buffer for the pipe, the kernel may use a capacity larger than _a_r_g, if that is
+              convenient for the implementation.  (In the current  implementation,  the  allocation  is  the  next
+              higher  power-of-two page-size multiple of the requested size.)  The actual capacity (in bytes) that
+              is set is returned as the function result.
+
+              Attempting to set the pipe capacity smaller than the amount of buffer space currently used to  store
+              data produces the error EEBBUUSSYY.
+
+       FF__GGEETTPPIIPPEE__SSZZ (_v_o_i_d; since Linux 2.6.35)
+              Return (as the function result) the capacity of the pipe referred to by _f_d.
+
+   FFiillee SSeeaalliinngg
+       File  seals  limit  the  set of allowed operations on a given file.  For each seal that is set on a file, a
+       specific set of operations will fail with EEPPEERRMM on this file from now on.  The file is said to  be  sealed.
+       The  default  set  of  seals depends on the type of the underlying file and filesystem.  For an overview of
+       file sealing, a discussion of its purpose, and some code examples, see mmeemmffdd__ccrreeaattee(2).
+
+       Currently, file seals can be applied only  to  a  file  descriptor  returned  by  mmeemmffdd__ccrreeaattee(2)  (if  the
+       MMFFDD__AALLLLOOWW__SSEEAALLIINNGG  was  employed).  On other filesystems, all ffccnnttll() operations that operate on seals will
+       return EEIINNVVAALL.
+
+       Seals are a property of an inode.  Thus, all open file descriptors referring to the same  inode  share  the
+       same set of seals.  Furthermore, seals can never be removed, only added.
+
+       FF__AADDDD__SSEEAALLSS (_i_n_t; since Linux 3.17)
+              Add the seals given in the bit-mask argument _a_r_g to the set of seals of the inode referred to by the
+              file descriptor _f_d.  Seals cannot be removed again.  Once this call succeeds, the seals are enforced
+              by  the kernel immediately.  If the current set of seals includes FF__SSEEAALL__SSEEAALL (see below), then this
+              call will be rejected with EEPPEERRMM.  Adding a seal that is already set is a no-op, in case FF__SSEEAALL__SSEEAALL
+              is not set already.  In order to place a seal, the file descriptor _f_d must be writable.
+
+       FF__GGEETT__SSEEAALLSS (_v_o_i_d; since Linux 3.17)
+              Return  (as  the  function  result)  the current set of seals of the inode referred to by _f_d.  If no
+              seals are set, 0 is returned.  If the file does not support sealing, -1 is returned and _e_r_r_n_o is set
+              to EEIINNVVAALL.
+
+       The following seals are available:
+
+       FF__SSEEAALL__SSEEAALL
+              If  this  seal  is  set,  any  further  call to ffccnnttll() with FF__AADDDD__SSEEAALLSS fails with the error EEPPEERRMM.
+              Therefore, this seal prevents any modifications to the set of seals itself.  If the initial  set  of
+              seals  of  a file includes FF__SSEEAALL__SSEEAALL, then this effectively causes the set of seals to be constant
+              and locked.
+
+       FF__SSEEAALL__SSHHRRIINNKK
+              If this seal is set, the file in question cannot be reduced in size.  This affects ooppeenn(2) with  the
+              OO__TTRRUUNNCC  flag  as  well  as ttrruunnccaattee(2) and ffttrruunnccaattee(2).  Those calls fail with EEPPEERRMM if you try to
+              shrink the file in question.  Increasing the file size is still possible.
+
+       FF__SSEEAALL__GGRROOWW
+              If this seal is set, the size of the file in question cannot be increased.   This  affects  wwrriittee(2)
+              beyond  the  end  of  the  file, ttrruunnccaattee(2), ffttrruunnccaattee(2), and ffaallllooccaattee(2).  These calls fail with
+              EEPPEERRMM if you use them to increase the file size.  If you keep the size or  shrink  it,  those  calls
+              still work as expected.
+
+       FF__SSEEAALL__WWRRIITTEE
+              If this seal is set, you cannot modify the contents of the file.  Note that shrinking or growing the
+              size of the file is still possible and allowed.  Thus, this seal is  normally  used  in  combination
+              with  one of the other seals.  This seal affects wwrriittee(2) and ffaallllooccaattee(2) (only in combination with
+              the FFAALLLLOOCC__FFLL__PPUUNNCCHH__HHOOLLEE flag).  Those calls fail with EEPPEERRMM if this seal is set.  Furthermore, try‐
+              ing to create new shared, writable memory-mappings via mmmmaapp(2) will also fail with EEPPEERRMM.
+
+              Using  the  FF__AADDDD__SSEEAALLSS  operation  to  set  the FF__SSEEAALL__WWRRIITTEE seal fails with EEBBUUSSYY if any writable,
+              shared mapping exists.  Such mappings must be unmapped before you can add this  seal.   Furthermore,
+              if  there  are  any  asynchronous I/O operations (iioo__ssuubbmmiitt(2)) pending on the file, all outstanding
+              writes will be discarded.
+
+   FFiillee rreeaadd//wwrriittee hhiinnttss
+       Write lifetime hints can be used to inform the kernel about the relative expected lifetime of writes  on  a
+       given  inode  or  via  a  particular  open  file description.  (See ooppeenn(2) for an explanation of open file
+       descriptions.)  In this context, the term "write lifetime" means the expected time the data  will  live  on
+       media, before being overwritten or erased.
+
+       An  application  may  use the different hint values specified below to separate writes into different write
+       classes, so that multiple users or applications running on a single storage back-end  can  aggregate  their
+       I/O  patterns  in  a consistent manner.  However, there are no functional semantics implied by these flags,
+       and different I/O classes can use the write lifetime hints in arbitrary ways, so long as the hints are used
+       consistently.
+
+       The following operations can be applied to the file descriptor, _f_d:
+
+       FF__GGEETT__RRWW__HHIINNTT (_u_i_n_t_6_4___t _*; since Linux 4.13)
+              Returns the value of the read/write hint associated with the underlying inode referred to by _f_d.
+
+       FF__SSEETT__RRWW__HHIINNTT (_u_i_n_t_6_4___t _*; since Linux 4.13)
+              Sets  the  read/write  hint value associated with the underlying inode referred to by _f_d.  This hint
+              persists until either it is explicitly modified or the underlying filesystem is unmounted.
+
+       FF__GGEETT__FFIILLEE__RRWW__HHIINNTT (_u_i_n_t_6_4___t _*; since Linux 4.13)
+              Returns the value of the read/write hint associated with the open file description  referred  to  by
+              _f_d.
+
+       FF__SSEETT__FFIILLEE__RRWW__HHIINNTT (_u_i_n_t_6_4___t _*; since Linux 4.13)
+              Sets the read/write hint value associated with the open file description referred to by _f_d.
+
+       If  an  open file description has not been assigned a read/write hint, then it shall use the value assigned
+       to the inode, if any.
+
+       The following read/write hints are valid since Linux 4.13:
+
+       RRWWHH__WWRRIITTEE__LLIIFFEE__NNOOTT__SSEETT
+              No specific hint has been set.  This is the default value.
+
+       RRWWHH__WWRRIITTEE__LLIIFFEE__NNOONNEE
+              No specific write lifetime is associated with this file or inode.
+
+       RRWWHH__WWRRIITTEE__LLIIFFEE__SSHHOORRTT
+              Data written to this inode or via this open file description is expected to have a short lifetime.
+
+       RRWWHH__WWRRIITTEE__LLIIFFEE__MMEEDDIIUUMM
+              Data written to this inode or via this open file description is expected to have a  lifetime  longer
+              than data written with RRWWHH__WWRRIITTEE__LLIIFFEE__SSHHOORRTT.
+
+       RRWWHH__WWRRIITTEE__LLIIFFEE__LLOONNGG
+              Data  written  to this inode or via this open file description is expected to have a lifetime longer
+              than data written with RRWWHH__WWRRIITTEE__LLIIFFEE__MMEEDDIIUUMM.
+
+       RRWWHH__WWRRIITTEE__LLIIFFEE__EEXXTTRREEMMEE
+              Data written to this inode or via this open file description is expected to have a  lifetime  longer
+              than data written with RRWWHH__WWRRIITTEE__LLIIFFEE__LLOONNGG.
+
+       All  the  write-specific hints are relative to each other, and no individual absolute meaning should be at‐
+       tributed to them.
+
+RREETTUURRNN VVAALLUUEE
+       For a successful call, the return value depends on the operation:
+
+       FF__DDUUPPFFDD  The new file descriptor.
+
+       FF__GGEETTFFDD  Value of file descriptor flags.
+
+       FF__GGEETTFFLL  Value of file status flags.
+
+       FF__GGEETTLLEEAASSEE
+                Type of lease held on file descriptor.
+
+       FF__GGEETTOOWWNN Value of file descriptor owner.
+
+       FF__GGEETTSSIIGG Value of signal sent when read or write becomes possible, or zero for traditional SSIIGGIIOO behavior.
+
+       FF__GGEETTPPIIPPEE__SSZZ, FF__SSEETTPPIIPPEE__SSZZ
+                The pipe capacity.
+
+       FF__GGEETT__SSEEAALLSS
+                A bit mask identifying the seals that have been set for the inode referred to by _f_d.
+
+       All other commands
+                Zero.
+
+       On error, -1 is returned, and _e_r_r_n_o is set appropriately.
+
+EERRRROORRSS
+       EEAACCCCEESS or EEAAGGAAIINN
+              Operation is prohibited by locks held by other processes.
+
+       EEAAGGAAIINN The operation is prohibited because the file has been memory-mapped by another process.
+
+       EEBBAADDFF  _f_d is not an open file descriptor
+
+       EEBBAADDFF  _c_m_d is FF__SSEETTLLKK or FF__SSEETTLLKKWW and the file descriptor open mode doesn't match with  the  type  of  lock
+              requested.
+
+       EEBBUUSSYY  _c_m_d  is FF__SSEETTPPIIPPEE__SSZZ and the new pipe capacity specified in _a_r_g is smaller than the amount of buffer
+              space currently used to store data in the pipe.
+
+       EEBBUUSSYY  _c_m_d is FF__AADDDD__SSEEAALLSS, _a_r_g includes FF__SSEEAALL__WWRRIITTEE, and there exists a writable, shared  mapping  on  the
+              file referred to by _f_d.
+
+       EEDDEEAADDLLKK
+              It was detected that the specified FF__SSEETTLLKKWW command would cause a deadlock.
+
+       EEFFAAUULLTT _l_o_c_k is outside your accessible address space.
+
+       EEIINNTTRR  _c_m_d is FF__SSEETTLLKKWW or FF__OOFFDD__SSEETTLLKKWW and the operation was interrupted by a signal; see ssiiggnnaall(7).
+
+       EEIINNTTRR  _c_m_d  is FF__GGEETTLLKK, FF__SSEETTLLKK, FF__OOFFDD__GGEETTLLKK, or FF__OOFFDD__SSEETTLLKK, and the operation was interrupted by a signal
+              before the lock was checked or acquired.  Most likely when locking a remote file (e.g., locking over
+              NFS), but can sometimes happen locally.
+
+       EEIINNVVAALL The value specified in _c_m_d is not recognized by this kernel.
+
+       EEIINNVVAALL _c_m_d is FF__AADDDD__SSEEAALLSS and _a_r_g includes an unrecognized sealing bit.
+
+       EEIINNVVAALL _c_m_d is FF__AADDDD__SSEEAALLSS or FF__GGEETT__SSEEAALLSS and the filesystem containing the inode referred to by _f_d does not
+              support sealing.
+
+       EEIINNVVAALL _c_m_d is FF__DDUUPPFFDD and _a_r_g is negative or is greater than the maximum allowable value (see  the  discus‐
+              sion of RRLLIIMMIITT__NNOOFFIILLEE in ggeettrrlliimmiitt(2)).
+
+       EEIINNVVAALL _c_m_d is FF__SSEETTSSIIGG and _a_r_g is not an allowable signal number.
+
+       EEIINNVVAALL _c_m_d is FF__OOFFDD__SSEETTLLKK, FF__OOFFDD__SSEETTLLKKWW, or FF__OOFFDD__GGEETTLLKK, and _l___p_i_d was not specified as zero.
+
+       EEMMFFIILLEE _c_m_d is FF__DDUUPPFFDD and the per-process limit on the number of open file descriptors has been reached.
+
+       EENNOOLLCCKK Too  many segment locks open, lock table is full, or a remote locking protocol failed (e.g., locking
+              over NFS).
+
+       EENNOOTTDDIIRR
+              FF__NNOOTTIIFFYY was specified in _c_m_d, but _f_d does not refer to a directory.
+
+       EEPPEERRMM  _c_m_d is FF__SSEETTPPIIPPEE__SSZZ and the soft or hard user pipe limit has been reached; see ppiippee(7).
+
+       EEPPEERRMM  Attempted to clear the OO__AAPPPPEENNDD flag on a file that has the append-only attribute set.
+
+       EEPPEERRMM  _c_m_d was FF__AADDDD__SSEEAALLSS, but _f_d was not open for writing or the current set of seals on the file already
+              includes FF__SSEEAALL__SSEEAALL.
+
+CCOONNFFOORRMMIINNGG TTOO
+       SVr4,  4.3BSD,  POSIX.1-2001.   Only  the  operations FF__DDUUPPFFDD, FF__GGEETTFFDD, FF__SSEETTFFDD, FF__GGEETTFFLL, FF__SSEETTFFLL, FF__GGEETTLLKK,
+       FF__SSEETTLLKK, and FF__SSEETTLLKKWW are specified in POSIX.1-2001.
+
+       FF__GGEETTOOWWNN  and  FF__SSEETTOOWWNN  are  specified  in  POSIX.1-2001.   (To  get  their  definitions,  define   either
+       __XXOOPPEENN__SSOOUURRCCEE with the value 500 or greater, or __PPOOSSIIXX__CC__SSOOUURRCCEE with the value 200809L or greater.)
+
+       FF__DDUUPPFFDD__CCLLOOEEXXEECC  is  specified  in  POSIX.1-2008.  (To get this definition, define __PPOOSSIIXX__CC__SSOOUURRCCEE with the
+       value 200809L or greater, or __XXOOPPEENN__SSOOUURRCCEE with the value 700 or greater.)
+
+       FF__GGEETTOOWWNN__EEXX,  FF__SSEETTOOWWNN__EEXX,  FF__SSEETTPPIIPPEE__SSZZ,  FF__GGEETTPPIIPPEE__SSZZ,  FF__GGEETTSSIIGG,  FF__SSEETTSSIIGG,  FF__NNOOTTIIFFYY,  FF__GGEETTLLEEAASSEE,  and
+       FF__SSEETTLLEEAASSEE are Linux-specific.  (Define the __GGNNUU__SSOOUURRCCEE macro to obtain these definitions.)
+
+       FF__OOFFDD__SSEETTLLKK,  FF__OOFFDD__SSEETTLLKKWW,  and  FF__OOFFDD__GGEETTLLKK are Linux-specific (and one must define __GGNNUU__SSOOUURRCCEE to obtain
+       their definitions), but work is being done to have them included in the next version of POSIX.1.
+
+       FF__AADDDD__SSEEAALLSS and FF__GGEETT__SSEEAALLSS are Linux-specific.
+
+NNOOTTEESS
+       The errors returned by dduupp22(2) are different from those returned by FF__DDUUPPFFDD.
+
+   FFiillee lloocckkiinngg
+       The original Linux ffccnnttll() system call was not designed to handle large file offsets (in the  _f_l_o_c_k  struc‐
+       ture).   Consequently,  an  ffccnnttll6644()  system call was added in Linux 2.4.  The newer system call employs a
+       different structure for file locking,  _f_l_o_c_k_6_4,  and  corresponding  commands,  FF__GGEETTLLKK6644,  FF__SSEETTLLKK6644,  and
+       FF__SSEETTLLKKWW6644.  However, these details can be ignored by applications using glibc, whose ffccnnttll() wrapper func‐
+       tion transparently employs the more recent system call where it is available.
+
+   RReeccoorrdd lloocckkss
+       Since kernel 2.0, there is no interaction between the types of lock placed by fflloocckk(2) and ffccnnttll().
+
+       Several systems have more fields in _s_t_r_u_c_t _f_l_o_c_k such as, for example, _l___s_y_s_i_d.  Clearly,  _l___p_i_d  alone  is
+       not going to be very useful if the process holding the lock may live on a different machine.
+
+       The  original  Linux ffccnnttll() system call was not designed to handle large file offsets (in the _f_l_o_c_k struc‐
+       ture).  Consequently, an ffccnnttll6644() system call was added in Linux 2.4.  The newer  system  call  employs  a
+       different  structure  for  file  locking,  _f_l_o_c_k_6_4,  and  corresponding commands, FF__GGEETTLLKK6644, FF__SSEETTLLKK6644, and
+       FF__SSEETTLLKKWW6644.  However, these details can be ignored by applications using glibc, whose ffccnnttll() wrapper func‐
+       tion transparently employs the more recent system call where it is available.
+
+   RReeccoorrdd lloocckkiinngg aanndd NNFFSS
+       Before  Linux  3.12, if an NFSv4 client loses contact with the server for a period of time (defined as more
+       than 90 seconds with no communication), it might lose and regain a lock without ever  being  aware  of  the
+       fact.  (The period of time after which contact is assumed lost is known as the NFSv4 leasetime.  On a Linux
+       NFS server, this can be determined by looking at _/_p_r_o_c_/_f_s_/_n_f_s_d_/_n_f_s_v_4_l_e_a_s_e_t_i_m_e, which expresses  the  period
+       in  seconds.   The  default  value  for this file is 90.)  This scenario potentially risks data corruption,
+       since another process might acquire a lock in the intervening period and perform file I/O.
+
+       Since Linux 3.12, if an NFSv4 client loses contact with the server, any I/O to the file by a process  which
+       "thinks"  it  holds  a  lock will fail until that process closes and reopens the file.  A kernel parameter,
+       _n_f_s_._r_e_c_o_v_e_r___l_o_s_t___l_o_c_k_s, can be set to 1 to obtain the pre-3.12 behavior, whereby the client will attempt to
+       recover  lost  locks  when contact is reestablished with the server.  Because of the attendant risk of data
+       corruption, this parameter defaults to 0 (disabled).
+
+BBUUGGSS
+   FF__SSEETTFFLL
+       It is not possible to use FF__SSEETTFFLL to change the state of the OO__DDSSYYNNCC and OO__SSYYNNCC flags.  Attempts to  change
+       the state of these flags are silently ignored.
+
+   FF__GGEETTOOWWNN
+       A  limitation  of  the  Linux  system call conventions on some architectures (notably i386) means that if a
+       (negative) process group ID to be returned by FF__GGEETTOOWWNN falls in the range -1  to  -4095,  then  the  return
+       value  is wrongly interpreted by glibc as an error in the system call; that is, the return value of ffccnnttll()
+       will be -1, and _e_r_r_n_o will contain the (positive) process group ID.  The Linux-specific FF__GGEETTOOWWNN__EEXX  opera‐
+       tion  avoids  this problem.  Since glibc version 2.11, glibc makes the kernel FF__GGEETTOOWWNN problem invisible by
+       implementing FF__GGEETTOOWWNN using FF__GGEETTOOWWNN__EEXX.
+
+   FF__SSEETTOOWWNN
+       In Linux 2.4 and earlier, there is bug that can occur when an unprivileged process uses FF__SSEETTOOWWNN to specify
+       the  owner  of  a socket file descriptor as a process (group) other than the caller.  In this case, ffccnnttll()
+       can return -1 with _e_r_r_n_o set to EEPPEERRMM, even when the owner process (group) is one that the caller has  per‐
+       mission  to send signals to.  Despite this error return, the file descriptor owner is set, and signals will
+       be sent to the owner.
+
+   DDeeaaddlloocckk ddeetteeccttiioonn
+       The deadlock-detection algorithm employed by the kernel when dealing with FF__SSEETTLLKKWW requests can yield  both
+       false  negatives (failures to detect deadlocks, leaving a set of deadlocked processes blocked indefinitely)
+       and false positives (EEDDEEAADDLLKK errors when there is no deadlock).  For example, the kernel  limits  the  lock
+       depth  of  its  dependency  search to 10 steps, meaning that circular deadlock chains that exceed that size
+       will not be detected.  In addition, the kernel may falsely indicate a deadlock when two or  more  processes
+       created using the cclloonnee(2) CCLLOONNEE__FFIILLEESS flag place locks that appear (to the kernel) to conflict.
+
+   MMaannddaattoorryy lloocckkiinngg
+       The  Linux  implementation of mandatory locking is subject to race conditions which render it unreliable: a
+       wwrriittee(2) call that overlaps with a lock may modify data after the mandatory lock  is  acquired;  a  rreeaadd(2)
+       call  that  overlaps  with  a  lock  may  detect changes to data that were made only after a write lock was
+       acquired.  Similar races exist between mandatory locks and mmmmaapp(2).  It is therefore inadvisable to rely on
+       mandatory locking.
+
+SSEEEE AALLSSOO
+       dduupp22(2), fflloocckk(2), ooppeenn(2), ssoocckkeett(2), lloocckkff(3), ccaappaabbiilliittiieess(7), ffeeaattuurree__tteesstt__mmaaccrrooss(7), llsslloocckkss(8)
+
+       _l_o_c_k_s_._t_x_t,  _m_a_n_d_a_t_o_r_y_-_l_o_c_k_i_n_g_._t_x_t,  and  _d_n_o_t_i_f_y_._t_x_t  in  the  Linux  kernel  source  directory  _D_o_c_u_m_e_n_t_a_‐
+       _t_i_o_n_/_f_i_l_e_s_y_s_t_e_m_s_/ (on older kernels, these files are  directly  under  the  _D_o_c_u_m_e_n_t_a_t_i_o_n_/  directory,  and
+       _m_a_n_d_a_t_o_r_y_-_l_o_c_k_i_n_g_._t_x_t is called _m_a_n_d_a_t_o_r_y_._t_x_t)
+
+CCOOLLOOPPHHOONN
+       This  page  is part of release 4.15 of the Linux _m_a_n_-_p_a_g_e_s project.  A description of the project, informa‐
+       tion   about   reporting   bugs,   and   the   latest   version   of   this   page,   can   be   found   at
+       https://www.kernel.org/doc/man-pages/.
+
+Linux                                               2018-02-02                                            FCNTL(2)

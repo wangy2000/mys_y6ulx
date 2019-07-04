@@ -1,0 +1,11 @@
+cd u-boot
+tools/buildman/buildman -H                           # 帮助信息，buildman 设置文件 /HOME/.buildman
+tools/buildman/buildman --fetch-arch all
+tools/buildman/buildman --fetch-arch arm             # 获取 arm 架构
+tools/buildman/buildman -k rpi_2                     # 编译树莓派2
+
+
+
+the Embedded Linux Development Kit (ELDK) version 5.8. This release is based on Yocto v1.8.1 ("fido")
+eldk 问题暂时不深究
+

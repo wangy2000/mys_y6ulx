@@ -1,0 +1,119 @@
+
+// ==================================
+initr_dm 分析 (init_sequence_r)(uboot\common\board_r.c)
+
+static int initr_dm(void)
+{
+	int ret;
+
+	/* Save the pre-reloc driver model and start a new one */
+	gd->dm_root_f = gd->dm_root;
+	gd->dm_root = NULL;
+	ret = dm_init_and_scan(false);                                      //  1111    初始化 ((gd_t *)gd)->uclass_root,执行 dev 的 bind() probe() 函数
+	if (ret)
+		return ret;
+#ifdef CONFIG_TIMER_EARLY
+	gd->timer = NULL;
+	ret = dm_timer_init();                                              //  2222     未定义，不执行
+	if (ret)
+		return ret;
+#endif
+
+	return 0;
+}
+
+// ================================== 1111
+(uboot\drivers\core\root.c)
+int dm_init_and_scan(bool pre_reloc_only)
+{
+	int ret;
+
+	ret = dm_init();                                                    // 3333    初始化 ((gd_t *)gd)->uclass_root,执行 dev 的 bind() probe() 函数
+	if (ret) {
+		debug("dm_init() failed: %d\n", ret);
+		return ret;
+	}
+	ret = dm_scan_platdata(pre_reloc_only);                             // 4444     空操作
+	if (ret) {
+		debug("dm_scan_platdata() failed: %d\n", ret);
+		return ret;
+	}
+
+	if (CONFIG_IS_ENABLED(OF_CONTROL)) {
+		ret = dm_scan_fdt(gd->fdt_blob, pre_reloc_only);                // 5555      未定义，不执行
+		if (ret) {
+			debug("dm_scan_fdt() failed: %d\n", ret);
+			return ret;
+		}
+	}
+
+	ret = dm_scan_other(pre_reloc_only);                                // 6666      空操作
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+// ================================== 3333
+int dm_init(void)
+{
+	int ret;
+
+	if (gd->dm_root) {
+		dm_warn("Virtual root driver already exists!\n");
+		return -EINVAL;
+	}
+	INIT_LIST_HEAD(&DM_UCLASS_ROOT_NON_CONST);                          // 初始化 ((gd_t *)gd)->uclass_root
+
+#if defined(CONFIG_NEEDS_MANUAL_RELOC)
+	fix_drivers();                                                      // relocate 代码
+	fix_uclass();
+#endif
+
+	ret = device_bind_by_name(NULL, false, &root_info, &DM_ROOT_NON_CONST);  // 7777
+	if (ret)
+		return ret;
+#if CONFIG_IS_ENABLED(OF_CONTROL)
+	DM_ROOT_NON_CONST->of_offset = 0;
+#endif
+	ret = device_probe(DM_ROOT_NON_CONST);                                   // 执行设备的 probe() 函数
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+#define DM_ROOT_NON_CONST		(((gd_t *)gd)->dm_root)
+#define DM_UCLASS_ROOT_NON_CONST	(((gd_t *)gd)->uclass_root)
+
+// ================================== 7777
+(uboot\drivers\core\device.c)
+int device_bind_by_name(struct udevice *parent, bool pre_reloc_only,
+			const struct driver_info *info, struct udevice **devp)
+{
+	struct driver *drv;
+
+	drv = lists_driver_lookup_name(info->name);                             // 按照名字遍历驱动，查找到返回
+	if (!drv)
+		return -ENOENT;
+	if (pre_reloc_only && !(drv->flags & DM_FLAG_PRE_RELOC))
+		return -EPERM;
+
+	return device_bind(parent, drv, info->name, (void *)info->platdata,     // malloc device 添加链表中，执行 bind() 函数
+			   -1, devp);
+}
+
+// ================================== 4444
+(uboot\drivers\core\root.c)
+int dm_scan_platdata(bool pre_reloc_only)
+{
+	int ret;
+
+	ret = lists_bind_drivers(DM_ROOT_NON_CONST, pre_reloc_only);            // 出错返回，空操作
+	if (ret == -ENOENT) {
+		dm_warn("Some drivers were not found\n");
+		ret = 0;
+	}
+
+	return ret;
+}

@@ -1,0 +1,187 @@
+// ================================ kernel 内存
+(Linux\Documentation\arm\memory.txt)
+
+Start		End		Use
+--------------------------------------------------------------------------
+ffff8000	ffffffff	copy_user_page / clear_user_page use.
+				For SA11xx and Xscale, this is used to
+				setup a minicache mapping.
+
+ffff4000	ffffffff	cache aliasing on ARMv6 and later CPUs.          // 48k cache 使用
+
+ffff1000	ffff7fff	Reserved.
+				Platforms must not use this address range.
+
+ffff0000	ffff0fff	CPU vector page.                                 // 4k  1 page，中断向量页
+				The CPU vectors are mapped here if the
+				CPU supports vector relocation (control
+				register V bit.)
+
+fffe0000	fffeffff	XScale cache flush area.  This is used
+				in proc-xscale.S to flush the whole data
+				cache. (XScale does not have TCM.)
+
+fffe8000	fffeffff	DTCM mapping area for platforms with             // 64k  TCM 用
+				DTCM mounted inside the CPU.
+
+fffe0000	fffe7fff	ITCM mapping area for platforms with
+				ITCM mounted inside the CPU.
+
+ffc00000	ffefffff	Fixmap mapping region.  Addresses provided       // 3M，fix_to_virt 代码
+				by fix_to_virt() will be located here.
+
+fee00000	feffffff	Mapping of PCI I/O space. This is a static
+				mapping within the vmalloc space.
+
+VMALLOC_START	VMALLOC_END-1	vmalloc() / ioremap() space.             // VMALLOC_START ， 0xff000000     / vmalloc 使用，ioremap 使用
+				Memory returned by vmalloc/ioremap will                     high_memory + 8M -- 0xff000000
+				be dynamically placed in this region.
+				Machine specific static mappings are also
+				located here through iotable_init().
+				VMALLOC_START is based upon the value
+				of the high_memory variable, and VMALLOC_END
+				is equal to 0xff000000.
+
+PAGE_OFFSET	high_memory-1	Kernel direct-mapped RAM region.            // PAGE_OFFSET，high_memory-1       / 内核直接映射
+				This maps the platforms RAM, and typically                 0x80000000 -- high_memory-1
+				maps all platform RAM in a 1:1 relationship.
+
+PKMAP_BASE	PAGE_OFFSET-1	Permanent kernel mappings                   // ????????????????????????????????????????
+				One way of mapping HIGHMEM pages into kernel
+				space.
+
+MODULES_VADDR	MODULES_END-1	Kernel module space                     // ????????????????????????????????????????
+				Kernel modules inserted via insmod are
+				placed here using dynamic mappings.
+
+00001000	TASK_SIZE-1	User space mappings
+				Per-thread mappings are placed here via
+				the mmap() system call.
+
+00000000	00000fff	CPU vector page / null pointer trap             //  4k  1 page，中断向量页
+				CPUs which do not support vector remapping
+				place their vector page here.  NULL pointer
+				dereferences by both the kernel and user
+				space are also caught via this mapping.
+
+
+
+// ================================ 虚拟地址空间
+
+// -------- VMALLOC
+#define VMALLOC_OFFSET		(8*1024*1024)
+#define VMALLOC_START		(((unsigned long)high_memory + VMALLOC_OFFSET) & ~(VMALLOC_OFFSET-1))
+#define VMALLOC_END		0xff000000UL
+
+static void * __initdata vmalloc_min =
+	(void *)(VMALLOC_END - (240 << 20) - VMALLOC_OFFSET);
+	
+vmalloc_min = 0xff000000 - 240M - 8M 
+            = 0xef800000
+
+phys_addr_t vmalloc_limit = __pa(vmalloc_min - 1) + 1;   // (Linux\arch\arm\mm\mmu.c:sanity_check_meminfo())      vmalloc_limit 是 vmalloc 的起始地址
+
+arm_lowmem_limit = vmalloc_limit   // region 大于 vmalloc_limit        低端内存上限
+                 = block_end       // region 小于 vmalloc_limit
+
+memblock_limit                     // 设置 memblock_limit
+
+high_memory = __va(arm_lowmem_limit - 1) + 1;             // 高端内存，设置为低内存上限
+
+memblock_limit = arm_lowmem_limit;
+
+
+// -------- 
+#define KERNEL_RAM_VADDR	(PAGE_OFFSET + TEXT_OFFSET)
+PAGE_OFFSET = 0x80000000
+TEXT_OFFSET = 0x00008000
+KERNEL_RAM_VADDR = 0x80008000            // 内核物理地址
+#define PG_DIR_SIZE	0x4000
+.globl	swapper_pg_dir 
+.equ	swapper_pg_dir, KERNEL_RAM_VADDR - PG_DIR_SIZE
+swapper_pg_dir = 0x80004000              // 页表物理地址
+
+
+
+arch/arm/include/asm/memory.h:33:/* PAGE_OFFSET - the virtual address of the start of the kernel image */
+arch/arm/include/asm/memory.h:34:#define PAGE_OFFSET            UL(CONFIG_PAGE_OFFSET)
+arch/arm/configs/mys_imx6_defconfig:470:CONFIG_PAGE_OFFSET=0x80000000
+
+
+
+
+#define virt_to_pfn(kaddr)	(__pa(kaddr) >> PAGE_SHIFT)                        // 虚拟地址转换为物理地址对应的页
+#define pfn_to_virt(pfn)	__va((pfn) << PAGE_SHIFT)                          // 物理地址对应的页转化为虚拟地址
+
+pfn     //物理地址对应的页，页帧
+
+request_resource                                                               // 检查是否干涉，重复使用
+
+
+
+
+
+// ================================
+sanity_check_meminfo();
+
+arm_memblock_init(&meminfo, mdesc);
+
+paging_init(mdesc);
+
+request_standard_resources(mdesc);
+
+
+// ================================
+// memblock 管理：删除 base，size 的 region
+
+for_each_memblock(memory, reg)                                                 // 遍历所有 memory 中的 region
+
+memblock_remove(reg->base, reg->size);                                         // 删除 base，size 的 region，方法是调用的 memblock_remove_range(&memblock.memory, base, size);
+
+memblock_remove_range(&memblock.memory, base, size);                           // 删除 base，size 的 region，方法是调用 memblock_isolate_range，memblock_remove_region
+
+memblock_isolate_range(type, base, size, &start_rgn, &end_rgn);                // 把 base，size 之间的 region 分离，记录占用的region 到 start_rgn，end_rgn
+
+memblock_remove_region(type, i);                                               // 删除 type 中第 i 个 region，多次循环删除 start_rgn，end_rgn 之间的 region
+
+memblock_reserve                                                               // 调用 memblock_reserve_region，又调用 memblock_add_range，又调用 memblock_insert_region，memblock_merge_regions 实现
+
+memblock_alloc                                                                 // 最终调用 memblock_insert_region 插入 region 来分配内存
+
+
+// ================================
+struct memblock_region {
+	phys_addr_t base;
+	phys_addr_t size;
+	unsigned long flags;
+#ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
+	int nid;
+#endif
+};
+
+struct memblock_type {                                                     // memblock.memory
+	unsigned long cnt;	/* number of regions */
+	unsigned long max;	/* size of the allocated array */                  
+	phys_addr_t total_size;	/* size of all regions */
+	struct memblock_region *regions;
+};
+
+struct memblock {
+	bool bottom_up;  /* is bottom up direction? */
+	phys_addr_t current_limit;
+	struct memblock_type memory;                                           // memblock.memory
+	struct memblock_type reserved;
+#ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
+	struct memblock_type physmem;
+#endif
+};
+
+extern struct memblock memblock;
+
+
+// ================================
+. = 0x30000000;                           // 链接地址 0x30000000，虚拟地址
+.text : AT(4096) { *(.text) }             // 加载地址 4096
+
+
+

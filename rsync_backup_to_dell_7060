@@ -1,0 +1,4 @@
+#!/bin/bash
+
+rsync -avz ../dev_mys_y6ulx ../backup
+

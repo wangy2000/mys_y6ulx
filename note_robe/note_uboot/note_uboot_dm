@@ -1,0 +1,389 @@
+// ====================================
+init_sequence_r (uboot\common\board_r.c)
+static int initr_dm(void)
+{
+	int ret;
+
+	/* Save the pre-reloc driver model and start a new one */
+	gd->dm_root_f = gd->dm_root;
+	gd->dm_root = NULL;
+	ret = dm_init_and_scan(false);                                // 
+	if (ret)
+		return ret;
+#ifdef CONFIG_TIMER_EARLY
+	gd->timer = NULL;
+	ret = dm_timer_init();
+	if (ret)
+		return ret;
+#endif
+
+	return 0;
+}
+
+int dm_init_and_scan(bool pre_reloc_only)
+{
+	int ret;
+
+	ret = dm_init();                                              // 1111
+	if (ret) {
+		debug("dm_init() failed: %d\n", ret);
+		return ret;
+	}
+	ret = dm_scan_platdata(pre_reloc_only);                       // device bind by name
+	if (ret) {
+		debug("dm_scan_platdata() failed: %d\n", ret);
+		return ret;
+	}
+
+	if (CONFIG_IS_ENABLED(OF_CONTROL)) {
+		ret = dm_scan_fdt(gd->fdt_blob, pre_reloc_only);
+		if (ret) {
+			debug("dm_scan_fdt() failed: %d\n", ret);
+			return ret;
+		}
+	}
+
+	ret = dm_scan_other(pre_reloc_only);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+// ==================================== 1111
+int dm_init(void)
+{
+	int ret;
+
+	if (gd->dm_root) {
+		dm_warn("Virtual root driver already exists!\n");
+		return -EINVAL;
+	}
+	INIT_LIST_HEAD(&DM_UCLASS_ROOT_NON_CONST);
+
+#if defined(CONFIG_NEEDS_MANUAL_RELOC)
+	fix_drivers();
+	fix_uclass();
+#endif
+
+	ret = device_bind_by_name(NULL, false, &root_info, &DM_ROOT_NON_CONST);  // 分配 dev 内存，初始化 dev，添加到 uc，并且 bind(dev)
+	if (ret)
+		return ret;
+#if CONFIG_IS_ENABLED(OF_CONTROL)
+	DM_ROOT_NON_CONST->of_offset = 0;
+#endif
+	ret = device_probe(DM_ROOT_NON_CONST);                                   // 分配 platdata ，priv，运行 probe(dev)
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+// ====================================
+int device_bind_by_name(struct udevice *parent, bool pre_reloc_only,
+			const struct driver_info *info, struct udevice **devp)
+{
+	struct driver *drv;
+
+	drv = lists_driver_lookup_name(info->name);
+	if (!drv)
+		return -ENOENT;
+	if (pre_reloc_only && !(drv->flags & DM_FLAG_PRE_RELOC))
+		return -EPERM;
+
+	return device_bind(parent, drv, info->name, (void *)info->platdata,
+			   -1, devp);
+}
+
+int device_bind(struct udevice *parent, const struct driver *drv,
+		const char *name, void *platdata, int of_offset,
+		struct udevice **devp)
+{
+	struct udevice *dev;
+	struct uclass *uc;
+	int size, ret = 0;
+
+	if (devp)
+		*devp = NULL;
+	if (!name)
+		return -EINVAL;
+
+	ret = uclass_get(drv->id, &uc);                                    // 获取 drv->id, 赋值给 uc
+	if (ret) {
+		debug("Missing uclass for driver %s\n", drv->name);
+		return ret;
+	}
+
+	dev = calloc(1, sizeof(struct udevice));
+	if (!dev)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&dev->sibling_node);
+	INIT_LIST_HEAD(&dev->child_head);
+	INIT_LIST_HEAD(&dev->uclass_node);
+#ifdef CONFIG_DEVRES
+	INIT_LIST_HEAD(&dev->devres_head);
+#endif
+	dev->platdata = platdata;
+	dev->name = name;
+	dev->of_offset = of_offset;
+	dev->parent = parent;
+	dev->driver = drv;
+	dev->uclass = uc;
+
+	dev->seq = -1;
+	dev->req_seq = -1;
+	if (CONFIG_IS_ENABLED(OF_CONTROL) && CONFIG_IS_ENABLED(DM_SEQ_ALIAS)) {
+		/*
+		* Some devices, such as a SPI bus, I2C bus and serial ports
+		* are numbered using aliases.
+		*
+		* This is just a 'requested' sequence, and will be
+		* resolved (and ->seq updated) when the device is probed.
+		*/
+		if (uc->uc_drv->flags & DM_UC_FLAG_SEQ_ALIAS) {
+			if (uc->uc_drv->name && of_offset != -1) {
+				fdtdec_get_alias_seq(gd->fdt_blob,
+						uc->uc_drv->name, of_offset,
+						&dev->req_seq);
+			}
+		}
+	}
+
+	if (!dev->platdata && drv->platdata_auto_alloc_size) {
+		dev->flags |= DM_FLAG_ALLOC_PDATA;
+		dev->platdata = calloc(1, drv->platdata_auto_alloc_size);
+		if (!dev->platdata) {
+			ret = -ENOMEM;
+			goto fail_alloc1;
+		}
+	}                                                                       // 初始化 dev
+
+	size = uc->uc_drv->per_device_platdata_auto_alloc_size;
+	if (size) {
+		dev->flags |= DM_FLAG_ALLOC_UCLASS_PDATA;
+		dev->uclass_platdata = calloc(1, size);
+		if (!dev->uclass_platdata) {
+			ret = -ENOMEM;
+			goto fail_alloc2;
+		}
+	}
+
+	if (parent) {
+		size = parent->driver->per_child_platdata_auto_alloc_size;
+		if (!size) {
+			size = parent->uclass->uc_drv->
+					per_child_platdata_auto_alloc_size;
+		}
+		if (size) {
+			dev->flags |= DM_FLAG_ALLOC_PARENT_PDATA;
+			dev->parent_platdata = calloc(1, size);
+			if (!dev->parent_platdata) {
+				ret = -ENOMEM;
+				goto fail_alloc3;
+			}
+		}
+	}
+
+	/* put dev into parent's successor list */
+	if (parent)
+		list_add_tail(&dev->sibling_node, &parent->child_head);
+
+	ret = uclass_bind_device(dev);                                          // dev 添加到 uc，调用 dev->parent->uclass->uc_drv->child_post_bind(dev)
+	if (ret)
+		goto fail_uclass_bind;
+
+	/* if we fail to bind we remove device from successors and free it */
+	if (drv->bind) {
+		ret = drv->bind(dev);                                               // drv->bind(dev)
+		if (ret)
+			goto fail_bind;
+	}
+	if (parent && parent->driver->child_post_bind) {
+		ret = parent->driver->child_post_bind(dev);                         // parent->driver->child_post_bind(dev)
+		if (ret)
+			goto fail_child_post_bind;
+	}
+	if (uc->uc_drv->post_bind) {
+		ret = uc->uc_drv->post_bind(dev);                                   // uc->uc_drv->post_bind(dev)
+		if (ret)
+			goto fail_uclass_post_bind;
+	}
+
+	if (parent)
+		dm_dbg("Bound device %s to %s\n", dev->name, parent->name);
+	if (devp)
+		*devp = dev;
+
+	dev->flags |= DM_FLAG_BOUND;
+
+	return 0;
+
+fail_uclass_post_bind:
+	/* There is no child unbind() method, so no clean-up required */
+fail_child_post_bind:
+	if (CONFIG_IS_ENABLED(DM_DEVICE_REMOVE)) {
+		if (drv->unbind && drv->unbind(dev)) {
+			dm_warn("unbind() method failed on dev '%s' on error path\n",
+				dev->name);
+		}
+	}
+
+fail_bind:
+	if (CONFIG_IS_ENABLED(DM_DEVICE_REMOVE)) {
+		if (uclass_unbind_device(dev)) {
+			dm_warn("Failed to unbind dev '%s' on error path\n",
+				dev->name);
+		}
+	}
+fail_uclass_bind:
+	if (CONFIG_IS_ENABLED(DM_DEVICE_REMOVE)) {
+		list_del(&dev->sibling_node);
+		if (dev->flags & DM_FLAG_ALLOC_PARENT_PDATA) {
+			free(dev->parent_platdata);
+			dev->parent_platdata = NULL;
+		}
+	}
+fail_alloc3:
+	if (dev->flags & DM_FLAG_ALLOC_UCLASS_PDATA) {
+		free(dev->uclass_platdata);
+		dev->uclass_platdata = NULL;
+	}
+fail_alloc2:
+	if (dev->flags & DM_FLAG_ALLOC_PDATA) {
+		free(dev->platdata);
+		dev->platdata = NULL;
+	}
+fail_alloc1:
+	devres_release_all(dev);
+
+	free(dev);
+
+	return ret;
+}
+
+// ====================================
+int device_probe(struct udevice *dev)
+{
+	const struct driver *drv;
+	int size = 0;
+	int ret;
+	int seq;
+
+	if (!dev)
+		return -EINVAL;
+
+	if (dev->flags & DM_FLAG_ACTIVATED)
+		return 0;
+
+	drv = dev->driver;
+	assert(drv);
+
+	/* Allocate private data if requested and not reentered */
+	if (drv->priv_auto_alloc_size && !dev->priv) {
+		dev->priv = alloc_priv(drv->priv_auto_alloc_size, drv->flags);
+		if (!dev->priv) {
+			ret = -ENOMEM;
+			goto fail;
+		}
+	}
+	/* Allocate private data if requested and not reentered */
+	size = dev->uclass->uc_drv->per_device_auto_alloc_size;
+	if (size && !dev->uclass_priv) {
+		dev->uclass_priv = calloc(1, size);
+		if (!dev->uclass_priv) {
+			ret = -ENOMEM;
+			goto fail;
+		}
+	}
+
+	/* Ensure all parents are probed */
+	if (dev->parent) {
+		size = dev->parent->driver->per_child_auto_alloc_size;
+		if (!size) {
+			size = dev->parent->uclass->uc_drv->
+					per_child_auto_alloc_size;
+		}
+		if (size && !dev->parent_priv) {
+			dev->parent_priv = alloc_priv(size, drv->flags);
+			if (!dev->parent_priv) {
+				ret = -ENOMEM;
+				goto fail;
+			}
+		}
+
+		ret = device_probe(dev->parent);
+		if (ret)
+			goto fail;
+
+		/*
+		 * The device might have already been probed during
+		 * the call to device_probe() on its parent device
+		 * (e.g. PCI bridge devices). Test the flags again
+		 * so that we don't mess up the device.
+		 */
+		if (dev->flags & DM_FLAG_ACTIVATED)
+			return 0;
+	}
+
+	seq = uclass_resolve_seq(dev);
+	if (seq < 0) {
+		ret = seq;
+		goto fail;
+	}
+	dev->seq = seq;
+
+	dev->flags |= DM_FLAG_ACTIVATED;
+
+	/*
+	 * Process pinctrl for everything except the root device, and
+	 * continue regardless of the result of pinctrl. Don't process pinctrl
+	 * settings for pinctrl devices since the device may not yet be
+	 * probed.
+	 */
+	if (dev->parent && device_get_uclass_id(dev) != UCLASS_PINCTRL)
+		pinctrl_select_state(dev, "default");
+
+	ret = uclass_pre_probe_device(dev);
+	if (ret)
+		goto fail;
+
+	if (dev->parent && dev->parent->driver->child_pre_probe) {
+		ret = dev->parent->driver->child_pre_probe(dev);
+		if (ret)
+			goto fail;
+	}
+
+	if (drv->ofdata_to_platdata && dev->of_offset >= 0) {
+		ret = drv->ofdata_to_platdata(dev);
+		if (ret)
+			goto fail;
+	}
+
+	if (drv->probe) {
+		ret = drv->probe(dev);
+		if (ret) {
+			dev->flags &= ~DM_FLAG_ACTIVATED;
+			goto fail;
+		}
+	}
+
+	ret = uclass_post_probe_device(dev);
+	if (ret)
+		goto fail_uclass;
+
+	return 0;
+fail_uclass:
+	if (device_remove(dev)) {
+		dm_warn("%s: Device '%s' failed to remove on error path\n",
+			__func__, dev->name);
+	}
+fail:
+	dev->flags &= ~DM_FLAG_ACTIVATED;
+
+	dev->seq = -1;
+	device_free(dev);
+
+	return ret;
+}
+

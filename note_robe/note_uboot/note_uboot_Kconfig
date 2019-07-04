@@ -1,0 +1,48 @@
+# ========================================================
+顶层 Kconfig 不包含 board 目录
+
+顶层 kconfig 包含 arch kconfig
+arch kconfig 包含 arch/${ARCH}/kconfig
+arch/${ARCH}/kconfig 包含 arch/arm/mach-sti/Kconfig  和 board/freescale/mx35pdk/Kconfig
+
+
+
+# ======================================================== Kconfig
+source "arch/Kconfig"                                                   // arch  cpu  board
+	config ARM                                        // arch
+		bool "ARM architecture"
+		select CREATE_ARCH_SYMLINK
+		select HAVE_PRIVATE_LIBGCC if !ARM64
+		select HAVE_GENERIC_BOARD
+		select SYS_GENERIC_BOARD
+		select SUPPORT_OF_CONTROL
+	source "arch/arm/Kconfig"                         // cpu
+		source "arch/arm/cpu/armv7/mx6/Kconfig"
+			config TARGET_MYS_IMX6ULL_14X14           // target
+				bool "Support MYiR mys-imx6ull"
+				select MX6ULL
+				select DM
+				select DM_THERMAL
+			config SYS_SOC                            // soc
+				default "mx6"
+			source "board/myir/mys_imx6ull/Kconfig"                    // 自己的板级目录
+				config SYS_BOARD                      // board
+					default "mys_imx6ull"
+				config SYS_VENDOR                     // vendor
+					default "myir"
+				config SYS_CONFIG_NAME                // config_name
+					default "mys_imx6ull"		
+		source "arch/arm/imx-common/Kconfig"
+	source "arch/arm/Kconfig.debug"
+source "common/Kconfig"                                                // 
+source "cmd/Kconfig"
+source "dts/Kconfig"
+source "net/Kconfig"
+source "drivers/Kconfig"
+source "fs/Kconfig"
+source "lib/Kconfig"
+source "test/Kconfig"
+
+
+
+

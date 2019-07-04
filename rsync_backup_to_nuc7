@@ -1,0 +1,4 @@
+#!/bin/bash
+
+rsync -avz /datadisk/dev_mys_y6ulx 192.168.50.22:/datadisk/backup
+

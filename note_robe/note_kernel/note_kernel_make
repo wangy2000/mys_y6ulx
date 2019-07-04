@@ -1,0 +1,475 @@
+// ================================== 编译
+make distclean
+make mys_imx6_defconfig
+make menuconfig
+make zImage
+make dtbs
+make modules
+make modules_install INSTALL_MOD_PATH=${mount_p}2
+make headers_install INSTALL_HDR_PATH=${mount_p}2/usr
+
+// ================================== 顶层 makefile 
+_all                        // 第一个目标
+ifeq ($(KBUILD_EXTMOD),)    // 根据变量 KBUILD_EXTMOD 决定依赖是 all 还是 modules
+_all: all                   // 依赖 all 编译内核
+else
+_all: modules               // 依赖 module 编译模块
+endif
+
+export srctree objtree VPATH      // 设置三个变量
+
+SUBARCH
+ARCH
+CROSS_COMPILE
+UTS_MACHINE
+SRCARCH                     // 设置架构相关变量
+hdr-arch                    // 设置头文件架构
+CONFIG_SHELL                // 获取 shell 程序
+
+HOSTCC 
+HOSTCXX
+HOSTCFLAGS
+HOSTCXXFLAGS                // 主机 CC，CXX，flags
+
+KBUILD_MODULES :=
+KBUILD_BUILTIN := 1
+
+COMPILER                    // 获取主机编译器
+
+include scripts/Kbuild.include                                         // 引入头文件1
+
+AS		= $(CROSS_COMPILE)as
+LD		= $(CROSS_COMPILE)ld
+CC		= $(CROSS_COMPILE)gcc
+CPP		= $(CC) -E
+AR		= $(CROSS_COMPILE)ar
+NM		= $(CROSS_COMPILE)nm
+STRIP		= $(CROSS_COMPILE)strip
+OBJCOPY		= $(CROSS_COMPILE)objcopy
+OBJDUMP		= $(CROSS_COMPILE)objdump                                   // 交叉编译链
+AWK		= awk
+GENKSYMS	= scripts/genksyms/genksyms
+INSTALLKERNEL  := installkernel
+DEPMOD		= /sbin/depmod
+PERL		= perl
+PYTHON		= python
+CHECK		= sparse                                                    // 编译工具
+CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
+		  -Wbitwise -Wno-return-void $(CF)
+CFLAGS_MODULE   =
+AFLAGS_MODULE   =
+LDFLAGS_MODULE  =
+CFLAGS_KERNEL	=
+AFLAGS_KERNEL	=
+CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage                             // 编译 flags
+
+USERINCLUDE    := \
+		-I$(srctree)/arch/$(hdr-arch)/include/uapi \
+		-Iarch/$(hdr-arch)/include/generated/uapi \
+		-I$(srctree)/include/uapi \
+		-Iinclude/generated/uapi \
+                -include $(srctree)/include/linux/kconfig.h
+
+LINUXINCLUDE    := \
+		-I$(srctree)/arch/$(hdr-arch)/include \
+		-Iarch/$(hdr-arch)/include/generated/uapi \
+		-Iarch/$(hdr-arch)/include/generated \
+		$(if $(KBUILD_SRC), -I$(srctree)/include) \
+		-Iinclude \
+		$(USERINCLUDE)                                                   // include 变量
+
+KBUILD_AFLAGS_KERNEL :=
+KBUILD_CFLAGS_KERNEL :=
+KBUILD_AFLAGS   := -D__ASSEMBLY__
+KBUILD_AFLAGS_MODULE  := -DMODULE
+KBUILD_CFLAGS_MODULE  := -DMODULE
+KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds           // flag 
+
+KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)                                          // KERNELRELEASE = 4.1.15
+KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)        // KERNELVERSION = $(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION) = 4.1.15
+
+PHONY += scripts_basic
+scripts_basic:
+	$(Q)$(MAKE) $(build)=scripts/basic
+	$(Q)rm -f .tmp_quiet_recordmcount
+// --------
+scripts_basic:
+	$(Q)$(MAKE) $(build)=scripts/basic
+	$(Q)rm -f .tmp_quiet_recordmcount
+	
+	= $(Q)$(MAKE) -f $(srctree)/scripts/Makefile.build obj=scripts/basic	
+// --------
+scripts/basic/%: scripts_basic ;
+outputmakefile:   
+asm-generic: 
+
+version_h := include/generated/uapi/linux/version.h
+old_version_h := include/linux/version.h
+
+no-dot-config-targets := clean mrproper distclean \
+			 cscope gtags TAGS tags help% %docs check% coccicheck \
+			 $(version_h) headers_% archheaders archscripts \
+			 kernelversion %src-pkg
+
+config-targets := 0
+mixed-targets  := 0
+dot-config     := 1
+ifeq ($(mixed-targets),1)                                                                       // mixed-targets = 1， 编译混合目标 ======================
+__build_one_by_one:
+ifeq ($(config-targets),1)                                                                      // mixed-targets = 0，config-targets = 1， 配置目标=========================
+config:
+%config:
+else                                                                                           // mixed-targets = 0，config-targets = 0  =========================
+scripts:
+init-y		:= init/
+drivers-y	:= drivers/ sound/ firmware/
+net-y		:= net/
+libs-y		:= lib/
+core-y		:= usr/
+ifeq ($(dot-config),1)                                                                       // mixed-targets = 0，config-targets = 0，dot-config = 1 =========================
+include/config/%.conf:
+include/config/auto.conf:
+else                                                                                       // mixed-targets = 0，config-targets = 0，dot-config = 0 =========================
+include/config/auto.conf: ;
+endif # $(dot-config)                                                                      // mixed-targets = 0，config-targets = 0 =========================================
+all: vmlinux 
+vmlinux: scripts/link-vmlinux.sh $(vmlinux-deps) FORCE
+include/config/kernel.release:
+prepare3:
+prepare2:
+prepare1:
+archprepare:
+prepare0:
+prepare: 
+
+all: modules                                                                       // 内核模块编译 start
+modules: $(vmlinux-dirs) $(if $(KBUILD_BUILTIN),vmlinux) modules.builtin
+modules.builtin: $(vmlinux-dirs:%=%/modules.builtin)
+%/modules.builtin: include/config/auto.conf
+modules_prepare:
+modules_install:
+_modinst_:
+_modinst_post:
+modules_sign:
+modules modules_install:
+
+clean: rm-dirs  := $(CLEAN_DIRS)
+clean: rm-files := $(CLEAN_FILES)
+vmlinuxclean:
+clean: archclean vmlinuxclean
+mrproper: rm-dirs  := $(wildcard $(MRPROPER_DIRS))
+mrproper: rm-files := $(wildcard $(MRPROPER_FILES))
+mrproper: clean archmrproper $(mrproper-dirs)
+distclean: mrproper
+%src-pkg: FORCE
+	$(Q)$(MAKE) $(build)=$(package-dir) $@
+%pkg: include/config/kernel.release FORCE
+	$(Q)$(MAKE) $(build)=$(package-dir) $@
+rpm: include/config/kernel.release FORCE
+	$(Q)$(MAKE) $(build)=$(package-dir) $@
+help:
+help-boards: $(help-board-dirs)
+%docs: scripts_basic FORCE                                                         // 内核模块编译 end
+
+crmodverdir:                                                                       // 独立模块编译 start
+modules: $(module-dirs)
+modules_install: _emodinst_ _emodinst_post
+_emodinst_:
+_emodinst_post: _emodinst_
+clean:	rm-dirs := $(MODVERDIR)
+clean: rm-files := $(KBUILD_EXTMOD)/Module.symvers
+help:
+prepare: ;
+scripts: ;                                                                         // 独立模块编译 end
+
+clean: $(clean-dirs)
+tags TAGS cscope gtags: FORCE
+includecheck:
+versioncheck:
+coccicheck:
+namespacecheck:
+export_report:
+checkstack:
+kernelrelease:
+kernelversion:
+image_name:
+tools/: FORCE
+tools/%: FORCE
+%.s: %.c prepare scripts FORCE
+	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+%.i: %.c prepare scripts FORCE
+	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+%.o: %.c prepare scripts FORCE
+	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+%.lst: %.c prepare scripts FORCE
+	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+%.s: %.S prepare scripts FORCE
+	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+%.o: %.S prepare scripts FORCE
+	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+%.symtypes: %.c prepare scripts FORCE
+	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+
+# Modules
+/: prepare scripts FORCE
+	$(cmd_crmodverdir)
+	$(Q)$(MAKE) KBUILD_MODULES=$(if $(CONFIG_MODULES),1) \
+	$(build)=$(build-dir)
+# Make sure the latest headers are built for Documentation
+Documentation/: headers_install
+%/: prepare scripts FORCE
+	$(cmd_crmodverdir)
+	$(Q)$(MAKE) KBUILD_MODULES=$(if $(CONFIG_MODULES),1) \
+	$(build)=$(build-dir)
+%.ko: prepare scripts FORCE
+	$(cmd_crmodverdir)
+	$(Q)$(MAKE) KBUILD_MODULES=$(if $(CONFIG_MODULES),1)   \
+	$(build)=$(build-dir) $(@:.ko=.o)
+	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost
+
+
+
+
+
+// ================================== 编译目标
+scripts                                           // 以 scripts 为源码目录，读取 Kbuild 或者 Makefile，编译本目录目标
+
+scripts_basic:                                    // 编译 scripts/basic 目录中的目标
+	$(Q)$(MAKE) $(build)=scripts/basic
+	$(Q)rm -f .tmp_quiet_recordmcount
+
+outputmakefile:                                  // 从当前源码树制作 makefile 文件，输出到目标树种
+ifneq ($(KBUILD_SRC),)
+	$(Q)ln -fsn $(srctree) source
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/mkmakefile \
+	    $(srctree) $(objtree) $(VERSION) $(PATCHLEVEL)
+
+asm-generic:                                     // 产生 asm 头文件
+	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.asm-generic \
+	            src=asm obj=arch/$(SRCARCH)/include/generated/asm
+	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.asm-generic \
+	            src=uapi/asm obj=arch/$(SRCARCH)/include/generated/uapi/asm
+
+sub-make: FORCE       
+	$(Q)$(MAKE) -C $(KBUILD_OUTPUT) KBUILD_SRC=$(CURDIR) \
+	-f $(CURDIR)/Makefile $(filter-out _all sub-make,$(MAKECMDGOALS))
+                                                 // KBUILD_SRC 为空，KBUILD_OUTPUT 不为空，执行
+					                             // 以本目录为源码，在 KBUILD_OUTPUT 目录中逐个输出所有的编译目标
+
+__build_one_by_one:
+	$(Q)set -e; \                 // 出错立马退出
+	for i in $(MAKECMDGOALS); do \
+		$(MAKE) -f $(srctree)/Makefile $$i; \
+	done                                        // __build_one_by_one 编译每一个目标
+
+config: scripts_basic outputmakefile FORCE      // 编译 scripts/scripts_basic，scripts/kconfig 两个目录中的目标，并配置内核
+	$(Q)$(MAKE) $(build)=scripts/kconfig $@
+
+%config: scripts_basic outputmakefile FORCE
+	$(Q)$(MAKE) $(build)=scripts/kconfig $@
+
+scripts: scripts_basic include/config/auto.conf include/config/tristate.conf \
+	 asm-generic
+	$(Q)$(MAKE) $(build)=$(@)                   // 编译 scripts 目标
+
+include/config/%.conf: $(KCONFIG_CONFIG) include/config/auto.conf.cmd
+	$(Q)$(MAKE) -f $(srctree)/Makefile silentoldconfig
+
+
+
+
+
+
+
+// ================================== include 文件
+include scripts/Kbuild.include                      // 顶层 makefile 引入头文件，有 build 变量
+// --------
+build := -f $(srctree)/scripts/Makefile.build obj
+// --------
+scripts/Makefile.build                              // scripts_basic 编译过程引入 makefile 文件
+// --------
+src := $(obj)
+
+PHONY := __build
+__build:                        // 第一个目标
+
+obj-y :=
+obj-m :=
+lib-y :=
+lib-m :=
+always :=
+targets :=
+subdir-y :=
+subdir-m :=
+EXTRA_AFLAGS   :=
+EXTRA_CFLAGS   :=
+EXTRA_CPPFLAGS :=
+EXTRA_LDFLAGS  :=
+asflags-y  :=
+ccflags-y  :=
+cppflags-y :=
+ldflags-y  :=
+
+subdir-asflags-y :=
+subdir-ccflags-y :=             // 清空所有变量
+
+-include include/config/auto.conf
+include scripts/Kbuild.include      // 引入两个头文件，配置文件和编译变量
+
+kbuild-dir := $(if $(filter /%,$(src)),$(src),$(srctree)/$(src))
+kbuild-file := $(if $(wildcard $(kbuild-dir)/Kbuild),$(kbuild-dir)/Kbuild,$(kbuild-dir)/Makefile)    
+                                    // 设置编译文件和编译目录，编译目录从外部传递进来，src，编译文件从目录中寻找 Kbuild 或者 Makefile
+
+include $(kbuild-file)              // 引入 Makefile 文件，内含目标变量
+
+include scripts/Makefile.lib        // 引入 Makefile 文件，主要是目标变量和命令变量
+
+include scripts/Makefile.host       // 引入 Makefile 文件，主要是 host 目标变量和命令变量
+
+ifneq ($(KBUILD_SRC),)
+_dummy := $(shell [ -d $(obj) ] || mkdir -p $(obj))
+_dummy := $(foreach d,$(obj-dirs), $(shell [ -d $(d) ] || mkdir -p $(d)))
+endif                               // 在编译目录中创建各个子目录
+
+ifneq ($(strip $(lib-y) $(lib-m) $(lib-)),)
+lib-target := $(obj)/lib.a
+endif
+
+ifneq ($(strip $(obj-y) $(obj-m) $(obj-) $(subdir-m) $(lib-target)),)
+builtin-target := $(obj)/built-in.o
+endif
+
+modorder-target := $(obj)/modules.order
+
+__build: $(if $(KBUILD_BUILTIN),$(builtin-target) $(lib-target) $(extra-y)) \
+	 $(if $(KBUILD_MODULES),$(obj-m) $(modorder-target)) \
+	 $(subdir-ym) $(always)
+
+$(builtin-target): $(obj-y) FORCE
+	$(call if_changed,link_o_target)                // builtin-target 依赖 obj-y，并把 obj-y 链接为目标
+
+$(lib-target): $(lib-y) FORCE
+	$(call if_changed,link_l_target)                // lib-target 依赖 lib-y，并把 lib-y 链接为目标
+
+$(obj-m) : quiet_modtag := [M]                      // ????????????????????????????????????????????
+
+$(modorder-target): $(subdir-ym) FORCE              // ????????????????????????????????????????????
+	$(Q)(cat /dev/null; $(modorder-cmds)) > $@
+
+$(subdir-ym):
+	$(Q)$(MAKE) $(build)=$@                         // subdir-ym 直接进入目录中编译，嵌套
+
+
+// ================================== all / vmlinux 目标编译过程
+                                                                     // 顶层 makefile 中目录目标使用 / 表示，各个子目录中的目录目标使用不带 .o 表示
+init-y		:= init/
+drivers-y	:= drivers/ sound/ firmware/
+net-y		:= net/
+libs-y		:= lib/
+core-y		:= usr/ kernel/ mm/ fs/ ipc/ security/ crypto/ block/ 
+
+KBUILD_IMAGE ?= vmlinux
+INSTALL_PATH ?= /boot
+INSTALL_DTBS_PATH ?= $(INSTALL_PATH)/dtbs/$(KERNELRELEASE)
+MODLIB	= $(INSTALL_MOD_PATH)/lib/modules/$(KERNELRELEASE)
+
+vmlinux-dirs := $(patsubst %/,%,$(filter %/, $(init-y) $(init-m) $(core-y) $(core-m) $(drivers-y) $(drivers-m) $(net-y) $(net-m) $(libs-y) $(libs-m)))
+vmlinux-alldirs	:= $(sort $(vmlinux-dirs) $(patsubst %/,%,$(filter %/, $(init-) $(core-) $(drivers-) $(net-) $(libs-))))
+
+// 以上是编译目标 dir 
+
+init-y		:= $(patsubst %/, %/built-in.o, $(init-y))
+core-y		:= $(patsubst %/, %/built-in.o, $(core-y))
+drivers-y	:= $(patsubst %/, %/built-in.o, $(drivers-y))
+net-y		:= $(patsubst %/, %/built-in.o, $(net-y))
+libs-y1		:= $(patsubst %/, %/lib.a, $(libs-y))
+libs-y2		:= $(patsubst %/, %/built-in.o, $(libs-y))
+libs-y		:= $(libs-y1) $(libs-y2)
+
+export KBUILD_VMLINUX_INIT := $(head-y) $(init-y)
+export KBUILD_VMLINUX_MAIN := $(core-y) $(libs-y) $(drivers-y) $(net-y)
+export KBUILD_LDS          := arch/$(SRCARCH)/kernel/vmlinux.lds
+vmlinux-deps := $(KBUILD_LDS) $(KBUILD_VMLINUX_INIT) $(KBUILD_VMLINUX_MAIN)
+
+all: vmlinux                                                                       // 编译目标依赖 vmlinux
+vmlinux: scripts/link-vmlinux.sh $(vmlinux-deps) FORCE                             // vmlinux 有依赖所有的 build-in.o, lib.a 等中间目标
+ifdef CONFIG_HEADERS_CHECK
+	$(Q)$(MAKE) -f $(srctree)/Makefile headers_check
+endif
+ifdef CONFIG_SAMPLES
+	$(Q)$(MAKE) $(build)=samples
+endif
+ifdef CONFIG_BUILD_DOCSRC
+	$(Q)$(MAKE) $(build)=Documentation
+endif
+ifdef CONFIG_GDB_SCRIPTS
+	$(Q)ln -fsn `cd $(srctree) && /bin/pwd`/scripts/gdb/vmlinux-gdb.py
+endif
+	+$(call if_changed,link-vmlinux)
+
+$(sort $(vmlinux-deps)): $(vmlinux-dirs) ;                                        // 中间目标依赖各个目录
+
+$(vmlinux-dirs): prepare scripts                                                  // 各个目录依赖 prepare 和 scripts，同时进入各个目录编译
+	$(Q)$(MAKE) $(build)=$@
+
+prepare: prepare0                                                                 // prepare 目标
+
+prepare0: archprepare FORCE                                                       // 编译当前目录
+	$(Q)$(MAKE) $(build)=.
+
+archprepare: archheaders archscripts prepare1 scripts_basic                        
+
+archheaders:
+
+archscripts:
+
+prepare1: prepare2 $(version_h) include/generated/utsrelease.h \                  // 头文件依赖，模块编译，创建.tmp_versions 目录并清空
+                   include/config/auto.conf
+	$(cmd_crmodverdir)
+
+// --------	
+(MODVERDIR := $(if $(KBUILD_EXTMOD),$(firstword $(KBUILD_EXTMOD))/).tmp_versions)
+cmd_crmodverdir = $(Q)mkdir -p $(MODVERDIR) \
+                  $(if $(KBUILD_MODULES),; rm -f $(MODVERDIR)/*)
+// --------
+
+prepare2: prepare3 outputmakefile asm-generic
+
+prepare3: include/config/kernel.release
+ifneq ($(KBUILD_SRC),)
+	@$(kecho) '  Using $(srctree) as source for kernel'
+	$(Q)if [ -f $(srctree)/.config -o -d $(srctree)/include/config ]; then \
+		echo >&2 "  $(srctree) is not clean, please run 'make mrproper'"; \
+		echo >&2 "  in the '$(srctree)' directory.";\
+		/bin/false; \
+	fi;
+endif
+
+// ================================== modules 目标编译过程
+modules: $(vmlinux-dirs) $(if $(KBUILD_BUILTIN),vmlinux) modules.builtin
+	$(Q)$(AWK) '!x[$$0]++' $(vmlinux-dirs:%=$(objtree)/%/modules.order) > $(objtree)/modules.order
+	@$(kecho) '  Building modules, stage 2.';
+	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost
+	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.fwinst obj=firmware __fw_modbuild
+
+modules.builtin: $(vmlinux-dirs:%=%/modules.builtin)
+	$(Q)$(AWK) '!x[$$0]++' $^ > $(objtree)/modules.builtin
+
+%/modules.builtin: include/config/auto.conf
+	$(Q)$(MAKE) $(modbuiltin)=$*
+
+
+
+
+
+
+// ================================== 版本文件
+KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)                                          // KERNELRELEASE = 4.1.15
+KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)        // KERNELVERSION = $(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION) = 4.1.15{NULL}
+
+
+
+
+
+
+

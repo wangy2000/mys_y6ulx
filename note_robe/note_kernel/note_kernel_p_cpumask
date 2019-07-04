@@ -1,0 +1,55 @@
+
+
+
+static void __init boot_cpu_init(void)
+{
+	int cpu = smp_processor_id();           // 获取当前 cpu
+	/* Mark the boot cpu "present", "online" etc for SMP and UP case */
+	set_cpu_online(cpu, true);
+	set_cpu_active(cpu, true);
+	set_cpu_present(cpu, true);
+	set_cpu_possible(cpu, true);
+}
+
+
+void set_cpu_online(unsigned int cpu, bool online)
+{
+	if (online) {
+		cpumask_set_cpu(cpu, to_cpumask(cpu_online_bits));
+		cpumask_set_cpu(cpu, to_cpumask(cpu_active_bits));
+	} else {
+		cpumask_clear_cpu(cpu, to_cpumask(cpu_online_bits));
+	}
+}
+
+#define to_cpumask(bitmap)  ((struct cpumask *)(1 ? (bitmap): (void *)sizeof(__check_is_bitmap(bitmap))))
+
+// ---------
+typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
+
+#define DECLARE_BITMAP(name,bits) \
+	unsigned long name[BITS_TO_LONGS(bits)]
+	
+struct cpumask {
+	DECLARE_BITMAP(bits, NR_CPUS); 
+}	
+
+struct cpumask {
+	unsigned long name[BITS_TO_LONGS(bits)]; 
+}	
+
+static inline void cpumask_set_cpu(unsigned int cpu, struct cpumask *dstp)
+{
+	set_bit(cpumask_check(cpu), cpumask_bits(dstp));
+}
+
+#define set_bit(nr,p)			ATOMIC_BITOP(set_bit,nr,p)
+
+
+
+// --------
+static DECLARE_BITMAP(cpu_online_bits, CONFIG_NR_CPUS) __read_mostly;
+const struct cpumask *const cpu_online_mask = to_cpumask(cpu_online_bits);
+
+
+

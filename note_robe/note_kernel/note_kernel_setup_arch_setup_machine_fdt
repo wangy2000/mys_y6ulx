@@ -1,0 +1,470 @@
+// ========================================================================================== Device Tree
+void __init early_init_dt_scan_nodes(void)
+{
+	/* Retrieve various information from the /chosen node */
+	of_scan_flat_dt(early_init_dt_scan_chosen, boot_command_line);
+
+	/* Initialize {size,address}-cells info */
+	of_scan_flat_dt(early_init_dt_scan_root, NULL);
+
+	/* Setup memory, calling early_init_dt_add_memory_arch */
+	of_scan_flat_dt(early_init_dt_scan_memory, NULL);
+}
+
+// ===============================
+int __init of_scan_flat_dt(int (*it)(unsigned long node,      // 遍历所有 node，获取 offset，pathp(名字)，depth，传递给 it 函数
+				     const char *uname, int depth,
+				     void *data),
+			   void *data)
+{
+	const void *blob = initial_boot_params;
+	const char *pathp;
+	int offset, rc = 0, depth = -1;
+
+        for (offset = fdt_next_node(blob, -1, &depth);        // 遍历所有 node
+             offset >= 0 && depth >= 0 && !rc;
+             offset = fdt_next_node(blob, offset, &depth)) {
+
+		pathp = fdt_get_name(blob, offset, NULL);             // 获取 blob 中偏移 offset 的name 指针返回给 pathp，长度返回给 NULL 指向的内存
+		if (*pathp == '/')
+			pathp = kbasename(pathp);                         // 取 pathp 的 basename (/arch/arm/kernel, pathp = k )
+		rc = it(offset, pathp, depth, data);
+	}
+	return rc;
+}
+
+initial_boot_params            // 全局指针变量
+
+int fdt_next_node(const void *fdt, int offset, int *depth)
+{
+	int nextoffset = 0;
+	uint32_t tag;
+
+	if (offset >= 0)                                                      // 第一次 offset = -1，不执行。第二次执行，确认 offset 有效性
+		if ((nextoffset = _fdt_check_node_offset(fdt, offset)) < 0)     
+			return nextoffset;
+
+	do {
+		offset = nextoffset;
+		tag = fdt_next_tag(fdt, offset, &nextoffset);                     // 获取下一个 tag
+
+		switch (tag) {
+		case FDT_PROP:
+		case FDT_NOP:
+			break;
+
+		case FDT_BEGIN_NODE:
+			if (depth)
+				(*depth)++;
+			break;
+
+		case FDT_END_NODE:
+			if (depth && ((--(*depth)) < 0))
+				return nextoffset;
+			break;
+
+		case FDT_END:
+			if ((nextoffset >= 0)
+			    || ((nextoffset == -FDT_ERR_TRUNCATED) && !depth))
+				return -FDT_ERR_NOTFOUND;
+			else
+				return nextoffset;
+		}
+	} while (tag != FDT_BEGIN_NODE);
+
+	return offset;
+}
+
+const void *fdt_offset_ptr(const void *fdt, int offset, unsigned int len)
+{
+	const char *p;
+
+	if (fdt_version(fdt) >= 0x11)
+		if (((offset + len) < offset)
+		    || ((offset + len) > fdt_size_dt_struct(fdt)))
+			return NULL;
+
+	p = _fdt_offset_ptr(fdt, offset);                                      // 获取 fdt 的 dt 结构体，偏移 offset 的指针
+
+	if (p + len < p)
+		return NULL;
+	return p;
+}
+
+// =============================
+int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
+				     int depth, void *data)
+{
+	int l;
+	const char *p;
+
+	pr_debug("search \"chosen\", depth: %d, uname: %s\n", depth, uname);
+
+	if (depth != 1 || !data ||                                              // 确认 depth ==1，是 chosen 属性值，chose@0 属性值
+	    (strcmp(uname, "chosen") != 0 && strcmp(uname, "chosen@0") != 0))
+		return 0;
+
+	early_init_dt_check_for_initrd(node);                                   // 获取 initrd_start， initrd_end 两个属性的物理地址，对应的虚拟地址，设置 initrd_below_start_ok = 1
+
+	/* Retrieve command line */
+	p = of_get_flat_dt_prop(node, "bootargs", &l);
+	if (p != NULL && l > 0)
+		strlcpy(data, p, min((int)l, COMMAND_LINE_SIZE));                   // 获取设备树 bootargs
+
+	/*
+	 * CONFIG_CMDLINE is meant to be a default in case nothing else
+	 * managed to set the command line, unless CONFIG_CMDLINE_FORCE
+	 * is set in which case we override whatever was found earlier.
+	 */
+#ifdef CONFIG_CMDLINE
+#ifndef CONFIG_CMDLINE_FORCE
+	if (!((char *)data)[0])
+#endif
+		strlcpy(data, CONFIG_CMDLINE, COMMAND_LINE_SIZE);                   // 如果 kconfig 定义了 CONFIG_CMDLINE 则使用 kconfig 定义的
+#endif /* CONFIG_CMDLINE */
+
+	pr_debug("Command line is: %s\n", (char*)data);
+
+	/* break now */
+	return 1;
+}
+
+// =============================
+int __init early_init_dt_scan_root(unsigned long node, const char *uname,
+				   int depth, void *data)
+{
+	const __be32 *prop;
+
+	if (depth != 0)
+		return 0;
+
+	dt_root_size_cells = OF_ROOT_NODE_SIZE_CELLS_DEFAULT;
+	dt_root_addr_cells = OF_ROOT_NODE_ADDR_CELLS_DEFAULT;
+
+	prop = of_get_flat_dt_prop(node, "#size-cells", NULL);
+	if (prop)
+		dt_root_size_cells = be32_to_cpup(prop);                           // 从设备树获取 dt_root_size_cells， 和 dt_root_addr_cells
+	pr_debug("dt_root_size_cells = %x\n", dt_root_size_cells);
+
+	prop = of_get_flat_dt_prop(node, "#address-cells", NULL);
+	if (prop)
+		dt_root_addr_cells = be32_to_cpup(prop);
+	pr_debug("dt_root_addr_cells = %x\n", dt_root_addr_cells);
+
+	/* break now */
+	return 1;
+}
+
+// =============================
+int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
+				     int depth, void *data)
+{
+	const char *type = of_get_flat_dt_prop(node, "device_type", NULL);
+	const __be32 *reg, *endp;
+	int l;
+
+	/* We are scanning "memory" nodes only */
+	if (type == NULL) {
+		/*
+		 * The longtrail doesn't have a device_type on the
+		 * /memory node, so look for the node called /memory@0.
+		 */
+		if (!IS_ENABLED(CONFIG_PPC32) || depth != 1 || strcmp(uname, "memory@0") != 0)
+			return 0;
+	} else if (strcmp(type, "memory") != 0)
+		return 0;
+
+	reg = of_get_flat_dt_prop(node, "linux,usable-memory", &l);
+	if (reg == NULL)
+		reg = of_get_flat_dt_prop(node, "reg", &l);
+	if (reg == NULL)
+		return 0;
+
+	endp = reg + (l / sizeof(__be32));
+
+	pr_debug("memory scan node %s, reg size %d,\n", uname, l);
+
+	while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {
+		u64 base, size;
+
+		base = dt_mem_next_cell(dt_root_addr_cells, &reg); 
+		size = dt_mem_next_cell(dt_root_size_cells, &reg);                           // 获取内存开始地址，和大小
+
+		if (size == 0)
+			continue;
+		pr_debug(" - %llx ,  %llx\n", (unsigned long long)base,
+		    (unsigned long long)size);
+
+		early_init_dt_add_memory_arch(base, size);
+	}
+
+	return 0;
+}
+
+void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
+{
+	const u64 phys_offset = __pa(PAGE_OFFSET);
+
+	if (!PAGE_ALIGNED(base)) {
+		if (size < PAGE_SIZE - (base & ~PAGE_MASK)) {
+			pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
+				base, base + size);
+			return;
+		}
+		size -= PAGE_SIZE - (base & ~PAGE_MASK);
+		base = PAGE_ALIGN(base);
+	}
+	size &= PAGE_MASK;
+
+	if (base > MAX_MEMBLOCK_ADDR) {
+		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
+				base, base + size);
+		return;
+	}
+
+	if (base + size - 1 > MAX_MEMBLOCK_ADDR) {
+		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
+				((u64)MAX_MEMBLOCK_ADDR) + 1, base + size);
+		size = MAX_MEMBLOCK_ADDR - base + 1;
+	}
+
+	if (base + size < phys_offset) {
+		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
+			   base, base + size);
+		return;
+	}
+	if (base < phys_offset) {
+		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
+			   base, phys_offset);
+		size -= phys_offset - base;
+		base = phys_offset;
+	}
+	memblock_add(base, size);
+}
+
+int __init_memblock memblock_add(phys_addr_t base, phys_addr_t size)
+{
+	return memblock_add_region(base, size, MAX_NUMNODES, 0);
+}
+
+static int __init_memblock memblock_add_region(phys_addr_t base,
+						phys_addr_t size,
+						int nid,
+						unsigned long flags)
+{
+	struct memblock_type *_rgn = &memblock.memory;                          // 全局变量 memblock 
+
+	memblock_dbg("memblock_add: [%#016llx-%#016llx] flags %#02lx %pF\n",
+		     (unsigned long long)base,
+		     (unsigned long long)base + size - 1,
+		     flags, (void *)_RET_IP_);
+
+	return memblock_add_range(_rgn, base, size, nid, flags);                // 添加 memblock.memory
+}
+
+// --------
+struct memblock_region {
+	phys_addr_t base;
+	phys_addr_t size;
+	unsigned long flags;
+#ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
+	int nid;
+#endif
+};
+
+struct memblock_type {                                                     // memblock.memory
+	unsigned long cnt;	/* number of regions */
+	unsigned long max;	/* size of the allocated array */
+	phys_addr_t total_size;	/* size of all regions */
+	struct memblock_region *regions;
+};
+
+struct memblock {
+	bool bottom_up;  /* is bottom up direction? */
+	phys_addr_t current_limit;
+	struct memblock_type memory;                                           // memblock.memory
+	struct memblock_type reserved;
+#ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
+	struct memblock_type physmem;
+#endif
+};
+
+extern struct memblock memblock;
+
+
+// =============================  device tree 头部结构体
+struct fdt_header {
+	uint32_t magic;			 /* magic word FDT_MAGIC */
+	uint32_t totalsize;		 /* total size of DT block */
+	uint32_t off_dt_struct;		 /* offset to structure */                    // 存放 dt_struct
+	uint32_t off_dt_strings;	 /* offset to strings */
+	uint32_t off_mem_rsvmap;	 /* offset to memory reserve map */           // 保留 mem 段
+	uint32_t version;		 /* format version */
+	uint32_t last_comp_version;	 /* last compatible version */
+
+	/* version 2 fields below */
+	uint32_t boot_cpuid_phys;	 /* Which physical CPU id we're
+					    booting on */
+	/* version 3 fields below */
+	uint32_t size_dt_strings;	 /* size of the strings block */
+
+	/* version 17 fields below */
+	uint32_t size_dt_struct;	 /* size of the structure block */
+};
+
+struct fdt_reserve_entry {
+	uint64_t address;
+	uint64_t size;
+};
+
+struct fdt_node_header {
+	uint32_t tag;
+	char name[0];
+};
+
+struct fdt_property {
+	uint32_t tag;
+	uint32_t len;
+	uint32_t nameoff;
+	char data[0];
+};
+
+#define FDT_MAGIC	0xd00dfeed	/* 4: version, 4: total size */
+#define FDT_TAGSIZE	sizeof(uint32_t)
+
+#define FDT_BEGIN_NODE	0x1		/* Start node: full name */
+#define FDT_END_NODE	0x2		/* End node */
+#define FDT_PROP	0x3		/* Property: name off,
+					   size, content */
+#define FDT_NOP		0x4		/* nop */
+#define FDT_END		0x9
+
+#define FDT_V1_SIZE	(7*sizeof(uint32_t))
+#define FDT_V2_SIZE	(FDT_V1_SIZE + sizeof(uint32_t))
+#define FDT_V3_SIZE	(FDT_V2_SIZE + sizeof(uint32_t))
+#define FDT_V16_SIZE	FDT_V3_SIZE
+#define FDT_V17_SIZE	(FDT_V16_SIZE + sizeof(uint32_t))
+
+
+// ============================ device tree 结构
+// --------
+struct fdt_header
+// --------
+struct fdt_reserve_entry
+// --------
+off_dt_struct
+
+FDT_BEGIN_NODE, FDT_NODE_NAME, 
+                FDT_BEGIN_NODE, FDT_NODE_NAME,
+                                FDT_PROP, len, nameoff, data
+                                                        FDT_PROP, len, nameoff, data
+														                        xxxx
+	            FDT_END_NODE
+FDT_END_NODE
+FDT_END
+
+// --------
+off_dt_strings
+
+
+// ====================================================================================================================== parse_early_param
+/* Arch code calls this early on, or if not, just before other parsing. */
+void __init parse_early_param(void)
+{
+	static int done __initdata;
+	static char tmp_cmdline[COMMAND_LINE_SIZE] __initdata;
+
+	if (done)
+		return;
+
+	/* All fall through to do_early_param. */
+	strlcpy(tmp_cmdline, boot_command_line, COMMAND_LINE_SIZE);
+	parse_early_options(tmp_cmdline);
+	done = 1;
+}
+
+void __init parse_early_options(char *cmdline)
+{
+	parse_args("early options", cmdline, NULL, 0, 0, 0, do_early_param);
+}
+
+char *parse_args(const char *doing,                                          // dong = "early options"
+		 char *args,                                                         // args = cmdline
+		 const struct kernel_param *params,                                  // params = NULL
+		 unsigned num,                                                       // num = 0
+		 s16 min_level,                                                      // min_level = 0
+		 s16 max_level,                                                      // max_level = 0
+		 int (*unknown)(char *param, char *val, const char *doing))          // unknown = do_early_param
+{
+	char *param, *val;
+
+	/* Chew leading spaces */
+	args = skip_spaces(args);                                               // 跳过 args 空格
+
+	if (*args)
+		pr_debug("doing %s, parsing ARGS: '%s'\n", doing, args);
+
+	while (*args) {
+		int ret;
+		int irq_was_disabled;
+
+		args = next_arg(args, &param, &val);                                // 从 args 中获取，一个参数，如：param = val
+		/* Stop at -- */
+		if (!val && strcmp(param, "--") == 0)
+			return args;
+		irq_was_disabled = irqs_disabled();
+		ret = parse_one(param, val, doing, params, num,                     // 执行 do_early_param 函数
+				min_level, max_level, unknown);
+		if (irq_was_disabled && !irqs_disabled())
+			pr_warn("%s: option '%s' enabled irq's!\n",
+				doing, param);
+
+		switch (ret) {
+		case -ENOENT:
+			pr_err("%s: Unknown parameter `%s'\n", doing, param);
+			return ERR_PTR(ret);
+		case -ENOSPC:
+			pr_err("%s: `%s' too large for parameter `%s'\n",
+			       doing, val ?: "", param);
+			return ERR_PTR(ret);
+		case 0:
+			break;
+		default:
+			pr_err("%s: `%s' invalid for parameter `%s'\n",
+			       doing, val ?: "", param);
+			return ERR_PTR(ret);
+		}
+	}
+
+	/* All parsed OK. */
+	return NULL;
+}
+
+static int __init do_early_param(char *param, char *val, const char *unused)    // 在 __setup_start 和 __setup_end 之间查找，如果 p->early 不为零，并且 p->str == param，
+{                                                                               //                                           如果 param = "console"，并且 p->str = "earlycon"
+                                                                                //                                           执行 p->setup_func(val)
+	const struct obs_kernel_param *p;
+
+	for (p = __setup_start; p < __setup_end; p++) {
+		if ((p->early && parameq(param, p->str)) ||
+		    (strcmp(param, "console") == 0 &&
+		     strcmp(p->str, "earlycon") == 0)
+		) {
+			if (p->setup_func(val) != 0)
+				pr_warn("Malformed early option '%s'\n", param);
+		}
+	}
+	/* We accept everything at this stage. */
+	return 0;
+}
+
+struct obs_kernel_param {
+	const char *str;
+	int (*setup_func)(char *);
+	int early;
+};
+
+
+
+
+

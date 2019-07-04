@@ -1,0 +1,489 @@
+// ======================================================================================
+void __init unflatten_device_tree(void)
+{
+	__unflatten_device_tree(initial_boot_params, &of_root,                             // 解析 DT (分析 DT 的各个 node ，属性值，分配内存(memblock)，填充节点和属性值。)
+				early_init_dt_alloc_memory_arch);
+
+	/* Get pointer to "/chosen" and "/aliases" nodes for use everywhere */
+	of_alias_scan(early_init_dt_alloc_memory_arch);                                    // 分配 alias 内存空间
+}
+
+// --------
+struct fdt_header {
+	uint32_t magic;			 /* magic word FDT_MAGIC */
+	uint32_t totalsize;		 /* total size of DT block */
+	uint32_t off_dt_struct;		 /* offset to structure */
+	uint32_t off_dt_strings;	 /* offset to strings */
+	uint32_t off_mem_rsvmap;	 /* offset to memory reserve map */
+	uint32_t version;		 /* format version */
+	uint32_t last_comp_version;	 /* last compatible version */
+
+	/* version 2 fields below */
+	uint32_t boot_cpuid_phys;	 /* Which physical CPU id we're
+					    booting on */
+	/* version 3 fields below */
+	uint32_t size_dt_strings;	 /* size of the strings block */
+
+	/* version 17 fields below */
+	uint32_t size_dt_struct;	 /* size of the structure block */
+};
+
+
+// --------
+static void __unflatten_device_tree(void *blob,
+			     struct device_node **mynodes,
+			     void * (*dt_alloc)(u64 size, u64 align))
+{
+	unsigned long size;
+	int start;
+	void *mem;
+
+	pr_debug(" -> unflatten_device_tree()\n");
+
+	if (!blob) {
+		pr_debug("No device tree pointer\n");
+		return;
+	}
+
+	pr_debug("Unflattening device tree:\n");
+	pr_debug("magic: %08x\n", fdt_magic(blob));
+	pr_debug("size: %08x\n", fdt_totalsize(blob));
+	pr_debug("version: %08x\n", fdt_version(blob));
+
+	if (fdt_check_header(blob)) {
+		pr_err("Invalid device tree blob header\n");
+		return;
+	}
+
+	/* First pass, scan for size */
+	start = 0;
+	size = (unsigned long)unflatten_dt_node(blob, NULL, &start, NULL, NULL, 0, true);          // 扫描 DT 大小
+	size = ALIGN(size, 4);
+
+	pr_debug("  size is %lx, allocating...\n", size);
+
+	/* Allocate memory for the expanded device tree */
+	mem = dt_alloc(size + 4, __alignof__(struct device_node));                                 // 分配内存
+	memset(mem, 0, size);
+
+	*(__be32 *)(mem + size) = cpu_to_be32(0xdeadbeef);
+
+	pr_debug("  unflattening %p...\n", mem);
+
+	/* Second pass, do actual unflattening */
+	start = 0;
+	unflatten_dt_node(blob, mem, &start, NULL, mynodes, 0, false);                             // 建立 DT
+	if (be32_to_cpup(mem + size) != 0xdeadbeef)
+		pr_warning("End of tree marker overwritten: %08x\n",
+			   be32_to_cpup(mem + size));
+
+	pr_debug(" <- unflatten_device_tree()\n");
+}
+
+// --------
+unflatten_dt_node(blob, NULL, &start, NULL, NULL, 0, true);                                    // 计算 DT 大小
+unflatten_dt_node(blob, mem, &start, NULL, mynodes, 0, false);                                 // 解析 DT 
+
+blob = initial_boot_params
+start = 0
+mem = dt_alloc(size + 4, __alignof__(struct device_node));
+mynodes = of_root
+
+static void * unflatten_dt_node(void *blob,	void *mem, int *poffset, struct device_node *dad,
+				struct device_node **nodepp, unsigned long fpsize, bool dryrun)
+{
+	const __be32 *p;
+	struct device_node *np;
+	struct property *pp, **prev_pp = NULL;
+	const char *pathp;
+	unsigned int l, allocl;
+	static int depth = 0;
+	int old_depth;
+	int offset;
+	int has_name = 0;
+	int new_format = 0;
+
+	pathp = fdt_get_name(blob, *poffset, &l);
+	if (!pathp)
+		return mem;
+
+	allocl = ++l;
+
+	/* version 0x10 has a more compact unit name here instead of the full
+	 * path. we accumulate the full path size using "fpsize", we'll rebuild
+	 * it later. We detect this because the first character of the name is
+	 * not '/'.
+	 */
+	if ((*pathp) != '/') {
+		new_format = 1;
+		if (fpsize == 0) {
+			/* root node: special case. fpsize accounts for path
+			 * plus terminating zero. root node only has '/', so
+			 * fpsize should be 2, but we want to avoid the first
+			 * level nodes to have two '/' so we use fpsize 1 here
+			 */
+			fpsize = 1;
+			allocl = 2;
+			l = 1;
+			pathp = "";
+		} else {
+			/* account for '/' and path size minus terminal 0
+			 * already in 'l'
+			 */
+			fpsize += l;
+			allocl = fpsize;
+		}
+	}
+                                                                                  // ======== 处理 node
+	np = unflatten_dt_alloc(&mem, sizeof(struct device_node) + allocl,            // 返回 mem 指针，mem += size，分配节点内存和名字
+				__alignof__(struct device_node));
+	if (!dryrun) {                                                                // 第一次不运行，第二次运行，功能：填充此 node
+		char *fn;
+		of_node_init(np);
+		np->full_name = fn = ((char *)np) + sizeof(*np);
+		if (new_format) {
+			/* rebuild full path for new format */
+			if (dad && dad->parent) {
+				strcpy(fn, dad->full_name);
+#ifdef DEBUG
+				if ((strlen(fn) + l + 1) != allocl) {
+					pr_debug("%s: p: %d, l: %d, a: %d\n",
+						pathp, (int)strlen(fn),
+						l, allocl);
+				}
+#endif
+				fn += strlen(fn);
+			}
+			*(fn++) = '/';
+		}
+		memcpy(fn, pathp, l);
+
+		prev_pp = &np->properties;
+		if (dad != NULL) {
+			np->parent = dad;
+			np->sibling = dad->child;
+			dad->child = np;
+		}
+	}
+	/* process properties */                                                    // ======== 处理属性值
+	for (offset = fdt_first_property_offset(blob, *poffset);                    // 获取下一个 tag 的地址  
+	     (offset >= 0);
+	     (offset = fdt_next_property_offset(blob, offset))) {                   // 遍历所有 tag 
+		const char *pname;
+		u32 sz;
+
+		if (!(p = fdt_getprop_by_offset(blob, offset, &pname, &sz))) {          // 返回属性值指针，pname 为属性的 name，size 为属性长度
+			offset = -FDT_ERR_INTERNAL;
+			break;
+		}
+
+		if (pname == NULL) {
+			pr_info("Can't find property name in list !\n");
+			break;
+		}
+		if (strcmp(pname, "name") == 0)
+			has_name = 1;
+		pp = unflatten_dt_alloc(&mem, sizeof(struct property),                  //  返回 mem 指针，mem += size，分配属性内存
+					__alignof__(struct property));
+		if (!dryrun) {                                                          // 第一次不运行，第二次运行，功能：填充此属性值
+			/* We accept flattened tree phandles either in
+			 * ePAPR-style "phandle" properties, or the
+			 * legacy "linux,phandle" properties.  If both
+			 * appear and have different values, things
+			 * will get weird.  Don't do that. */
+			if ((strcmp(pname, "phandle") == 0) ||
+			    (strcmp(pname, "linux,phandle") == 0)) {
+				if (np->phandle == 0)
+					np->phandle = be32_to_cpup(p);
+			}
+			/* And we process the "ibm,phandle" property
+			 * used in pSeries dynamic device tree
+			 * stuff */
+			if (strcmp(pname, "ibm,phandle") == 0)
+				np->phandle = be32_to_cpup(p);
+			pp->name = (char *)pname;
+			pp->length = sz;
+			pp->value = (__be32 *)p;
+			*prev_pp = pp;
+			prev_pp = &pp->next;
+		}
+	}
+	/* with version 0x10 we may not have the name property, recreate
+	 * it here from the unit name if absent
+	 */
+	if (!has_name) {                                                           // ======== 处理名字的属性值
+		const char *p1 = pathp, *ps = pathp, *pa = NULL;
+		int sz;
+
+		while (*p1) {
+			if ((*p1) == '@')
+				pa = p1;
+			if ((*p1) == '/')
+				ps = p1 + 1;
+			p1++;
+		}
+		if (pa < ps)
+			pa = p1;
+		sz = (pa - ps) + 1;
+		pp = unflatten_dt_alloc(&mem, sizeof(struct property) + sz,            //  返回 mem 指针，mem += size，分配属性内存，和名字
+					__alignof__(struct property));
+		if (!dryrun) {
+			pp->name = "name";
+			pp->length = sz;
+			pp->value = pp + 1;
+			*prev_pp = pp;
+			prev_pp = &pp->next;
+			memcpy(pp->value, ps, sz - 1);
+			((char *)pp->value)[sz - 1] = 0;
+			pr_debug("fixed up name for %s -> %s\n", pathp,
+				(char *)pp->value);
+		}
+	}
+	if (!dryrun) {
+		*prev_pp = NULL;
+		np->name = of_get_property(np, "name", NULL);
+		np->type = of_get_property(np, "device_type", NULL);
+
+		if (!np->name)
+			np->name = "<NULL>";
+		if (!np->type)
+			np->type = "<NULL>";
+	}
+
+	old_depth = depth;                                                            // ======== 查找下一个 node，递归分析下一个 node
+	*poffset = fdt_next_node(blob, *poffset, &depth);                             // 查找下一个节点，如果找到 ++depth 
+	if (depth < 0)
+		depth = 0;
+	while (*poffset > 0 && depth > old_depth)
+		mem = unflatten_dt_node(blob, mem, poffset, np, NULL,                     // 递归分析下一个node
+					fpsize, dryrun);
+
+	if (*poffset < 0 && *poffset != -FDT_ERR_NOTFOUND)
+		pr_err("unflatten: error %d processing FDT\n", *poffset);
+
+	/*
+	 * Reverse the child list. Some drivers assumes node order matches .dts
+	 * node order
+	 */
+	if (!dryrun && np->child) {                                                   // ======== 处理当前 node 的 child 父子关系
+		struct device_node *child = np->child;
+		np->child = NULL;
+		while (child) {
+			struct device_node *next = child->sibling;
+			child->sibling = np->child;
+			np->child = child;
+			child = next;
+		}
+	}                                                                             // np->child 存在，则把 child 添加到 np->child 中
+
+	if (nodepp)
+		*nodepp = np;
+
+	return mem;
+}
+
+
+
+
+
+// --------
+void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align))
+{
+	struct property *pp;
+
+	of_aliases = of_find_node_by_path("/aliases");
+	of_chosen = of_find_node_by_path("/chosen");
+	if (of_chosen == NULL)
+		of_chosen = of_find_node_by_path("/chosen@0");
+
+	if (of_chosen) {
+		/* linux,stdout-path and /aliases/stdout are for legacy compatibility */
+		const char *name = of_get_property(of_chosen, "stdout-path", NULL);
+		if (!name)
+			name = of_get_property(of_chosen, "linux,stdout-path", NULL);
+		if (IS_ENABLED(CONFIG_PPC) && !name)
+			name = of_get_property(of_aliases, "stdout", NULL);
+		if (name)
+			of_stdout = of_find_node_opts_by_path(name, &of_stdout_options);
+	}
+
+	if (!of_aliases)
+		return;
+
+	for_each_property_of_node(of_aliases, pp) {
+		const char *start = pp->name;
+		const char *end = start + strlen(start);
+		struct device_node *np;
+		struct alias_prop *ap;
+		int id, len;
+
+		/* Skip those we do not want to proceed */
+		if (!strcmp(pp->name, "name") ||
+		    !strcmp(pp->name, "phandle") ||
+		    !strcmp(pp->name, "linux,phandle"))
+			continue;
+
+		np = of_find_node_by_path(pp->value);
+		if (!np)
+			continue;
+
+		/* walk the alias backwards to extract the id and work out
+		 * the 'stem' string */
+		while (isdigit(*(end-1)) && end > start)
+			end--;
+		len = end - start;
+
+		if (kstrtoint(end, 10, &id) < 0)
+			continue;
+
+		/* Allocate an alias_prop with enough space for the stem */
+		ap = dt_alloc(sizeof(*ap) + len + 1, 4);
+		if (!ap)
+			continue;
+		memset(ap, 0, sizeof(*ap) + len + 1);
+		ap->alias = start;
+		of_alias_add(ap, np, id, start, len);
+	}
+}
+
+
+
+
+
+// --------
+void * __init __weak early_init_dt_alloc_memory_arch(u64 size, u64 align)
+{
+	return __va(memblock_alloc(size, align));                                    // 分配内存，转换为虚拟地址
+}
+
+phys_addr_t __init memblock_alloc(phys_addr_t size, phys_addr_t align)
+{
+	return memblock_alloc_base(size, align, MEMBLOCK_ALLOC_ACCESSIBLE);
+}
+
+phys_addr_t __init memblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
+{
+	phys_addr_t alloc;
+
+	alloc = __memblock_alloc_base(size, align, max_addr);
+
+	if (alloc == 0)
+		panic("ERROR: Failed to allocate 0x%llx bytes below 0x%llx.\n",
+		      (unsigned long long) size, (unsigned long long) max_addr);
+
+	return alloc;
+}
+
+phys_addr_t __init __memblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
+{
+	return memblock_alloc_base_nid(size, align, max_addr, NUMA_NO_NODE);
+}
+
+static phys_addr_t __init memblock_alloc_base_nid(phys_addr_t size,
+					phys_addr_t align, phys_addr_t max_addr,
+					int nid)
+{
+	return memblock_alloc_range_nid(size, align, 0, max_addr, nid);
+}
+
+static phys_addr_t __init memblock_alloc_range_nid(phys_addr_t size,
+					phys_addr_t align, phys_addr_t start,
+					phys_addr_t end, int nid)
+{
+	phys_addr_t found;
+
+	if (!align)
+		align = SMP_CACHE_BYTES;
+
+	found = memblock_find_in_range_node(size, align, start, end, nid);
+	if (found && !memblock_reserve(found, size)) {
+		/*
+		 * The min_count is set to 0 so that memblock allocations are
+		 * never reported as leaks.
+		 */
+		kmemleak_alloc(__va(found), size, 0, 0);                                  // kmemleak_alloc 创建一个 object 用于检查内存泄漏，object 插入 object_tree_root (红黑树)和 object_list(链表)
+		return found;
+	}
+	return 0;
+}
+
+int __init_memblock memblock_add_range(struct memblock_type *type,
+				phys_addr_t base, phys_addr_t size,
+				int nid, unsigned long flags)
+{
+	bool insert = false;
+	phys_addr_t obase = base;
+	phys_addr_t end = base + memblock_cap_size(base, &size);
+	int i, nr_new;
+
+	if (!size)
+		return 0;
+
+	/* special case for empty array */
+	if (type->regions[0].size == 0) {
+		WARN_ON(type->cnt != 1 || type->total_size);
+		type->regions[0].base = base;
+		type->regions[0].size = size;
+		type->regions[0].flags = flags;
+		memblock_set_region_node(&type->regions[0], nid);
+		type->total_size = size;
+		return 0;
+	}
+repeat:
+	/*
+	 * The following is executed twice.  Once with %false @insert and
+	 * then with %true.  The first counts the number of regions needed
+	 * to accomodate the new area.  The second actually inserts them.
+	 */
+	base = obase;
+	nr_new = 0;
+
+	for (i = 0; i < type->cnt; i++) {
+		struct memblock_region *rgn = &type->regions[i];
+		phys_addr_t rbase = rgn->base;
+		phys_addr_t rend = rbase + rgn->size;
+
+		if (rbase >= end)
+			break;
+		if (rend <= base)
+			continue;
+		/*
+		 * @rgn overlaps.  If it separates the lower part of new
+		 * area, insert that portion.
+		 */
+		if (rbase > base) {
+			nr_new++;
+			if (insert)
+				memblock_insert_region(type, i++, base,                     // memblock_insert_region 插入 region 分配内存
+						       rbase - base, nid,
+						       flags);
+		}
+		/* area below @rend is dealt with, forget about it */
+		base = min(rend, end);
+	}
+
+	/* insert the remaining portion */
+	if (base < end) {
+		nr_new++;
+		if (insert)
+			memblock_insert_region(type, i, base, end - base,
+					       nid, flags);
+	}
+
+	/*
+	 * If this was the first round, resize array and repeat for actual
+	 * insertions; otherwise, merge and return.
+	 */
+	if (!insert) {
+		while (type->cnt + nr_new > type->max)
+			if (memblock_double_array(type, obase, size) < 0)
+				return -ENOMEM;
+		insert = true;
+		goto repeat;
+	} else {
+		memblock_merge_regions(type);
+		return 0;
+	}
+}
+
+

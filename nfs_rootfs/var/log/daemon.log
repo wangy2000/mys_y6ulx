@@ -1,0 +1,68 @@
+Jul  1 15:40:29 7060 systemd[1]: Starting udev Kernel Device Manager...
+Jul  1 15:40:29 7060 systemd[1]: Mounting FUSE Control File System...
+Jul  1 15:40:29 7060 systemd[1]: Starting Apply Kernel Variables...
+Jul  1 15:40:29 7060 systemd[1]: Starting Flush Journal to Persistent Storage...
+Jul  1 15:40:29 7060 systemd[1]: Starting Load/Save Random Seed...
+Jul  1 15:40:29 7060 systemd[1]: Starting udev Coldplug all Devices...
+Jul  1 15:40:29 7060 systemd[1]: Reached target Local File Systems (Pre).
+Jul  1 15:40:29 7060 systemd[1]: Reached target Local File Systems.
+Jul  1 15:40:29 7060 systemd[1]: Mounted FUSE Control File System.
+Jul  1 15:40:29 7060 systemd[1]: Started Apply Kernel Variables.
+Jul  1 15:40:29 7060 systemd[1]: Started Load/Save Random Seed.
+Jul  1 15:40:29 7060 systemd[1]: Starting Raise network interfaces...
+Jul  1 15:40:29 7060 systemd[1]: Started Flush Journal to Persistent Storage.
+Jul  1 15:40:29 7060 systemd[1]: Starting Create Volatile Files and Directories...
+Jul  1 15:40:29 7060 systemd[1]: Started udev Kernel Device Manager.
+Jul  1 15:40:29 7060 systemd[1]: Started Create Volatile Files and Directories.
+Jul  1 15:40:29 7060 systemd[1]: Starting Update UTMP about System Boot/Shutdown...
+Jul  1 15:40:29 7060 systemd[1]: Starting Network Time Synchronization...
+Jul  1 15:40:29 7060 systemd[1]: Started Update UTMP about System Boot/Shutdown.
+Jul  1 15:40:29 7060 systemd[1]: Started Network Time Synchronization.
+Jul  1 15:40:29 7060 systemd[1]: Reached target System Time Synchronized.
+Jul  1 15:40:29 7060 systemd[1]: Started Raise network interfaces.
+Jul  1 15:40:29 7060 systemd[1]: Reached target Network.
+Jul  1 15:40:29 7060 systemd-udevd[165]: Failed to apply ACL on /dev/dri/card0: Operation not supported
+Jul  1 15:40:29 7060 systemd-udevd[168]: Failed to apply ACL on /dev/video0: Operation not supported
+Jul  1 15:40:29 7060 systemd[1]: Created slice system-systemd\x2dbacklight.slice.
+Jul  1 15:40:29 7060 systemd[1]: Starting Load/Save Screen Backlight Brightness of backlight:backlight...
+Jul  1 15:40:29 7060 systemd[1]: Started udev Coldplug all Devices.
+Jul  1 15:40:29 7060 systemd[1]: Found device /dev/ttymxc0.
+Jul  1 15:40:29 7060 systemd[1]: Started Load/Save Screen Backlight Brightness of backlight:backlight.
+Jul  1 15:40:29 7060 systemd[1]: Reached target System Initialization.
+Jul  1 15:40:29 7060 systemd[1]: apt-daily.timer: Adding 2h 16min 19.579874s random time.
+Jul  1 15:40:29 7060 systemd[1]: Started Daily apt download activities.
+Jul  1 15:40:29 7060 systemd[1]: apt-daily-upgrade.timer: Adding 28min 2.608203s random time.
+Jul  1 15:40:29 7060 systemd[1]: Started Daily apt upgrade and clean activities.
+Jul  1 15:40:29 7060 systemd[1]: Listening on D-Bus System Message Bus Socket.
+Jul  1 15:40:29 7060 systemd[1]: Reached target Sockets.
+Jul  1 15:40:29 7060 systemd[1]: Started Daily Cleanup of Temporary Directories.
+Jul  1 15:40:29 7060 systemd[1]: Reached target Timers.
+Jul  1 15:40:29 7060 systemd[1]: Reached target Basic System.
+Jul  1 15:40:29 7060 systemd[1]: Started D-Bus System Message Bus.
+Jul  1 15:40:29 7060 dbus-daemon[181]: Failed to start message bus: Could not get UID and GID for username "messagebus"
+Jul  1 15:40:29 7060 systemd-udevd[174]: Failed to apply ACL on /dev/snd/timer: Operation not supported
+Jul  1 15:40:29 7060 systemd[1]: Failed to subscribe to NameOwnerChanged signal for 'org.freedesktop.login1': Connection timed out
+Jul  1 15:40:29 7060 systemd[1]: Failed to subscribe to activation signal: Connection timed out
+Jul  1 15:40:29 7060 systemd[1]: Failed to register name: Connection timed out
+Jul  1 15:40:29 7060 systemd[1]: Failed to set up API bus: Connection timed out
+Jul  1 15:40:29 7060 systemd[1]: Starting OpenBSD Secure Shell server...
+Jul  1 15:40:29 7060 systemd[1]: Starting Login Service...
+Jul  1 15:40:29 7060 systemd[1]: Started Regular background program processing daemon.
+Jul  1 15:40:29 7060 systemd[1]: Starting System Logging Service...
+Jul  1 15:40:29 7060 systemd[1]: Starting Permit User Sessions...
+Jul  1 15:40:29 7060 systemd[1]: dbus.service: Main process exited, code=exited, status=1/FAILURE
+Jul  1 15:40:29 7060 systemd[1]: dbus.service: Unit entered failed state.
+Jul  1 15:40:29 7060 systemd[1]: dbus.service: Failed with result 'exit-code'.
+Jul  1 15:40:29 7060 systemd[1]: Started Permit User Sessions.
+Jul  1 15:40:29 7060 systemd[1]: Started System Logging Service.
+Jul  1 15:40:29 7060 sshd[198]: Privilege separation user sshd does not exist
+Jul  1 15:40:29 7060 systemd[1]: ssh.service: Control process exited, code=exited status=255
+Jul  1 15:40:29 7060 systemd[1]: Failed to start OpenBSD Secure Shell server.
+Jul  1 15:40:29 7060 systemd[1]: ssh.service: Unit entered failed state.
+Jul  1 15:40:29 7060 systemd[1]: ssh.service: Failed with result 'exit-code'.
+Jul  1 15:40:29 7060 systemd[1]: ssh.service: Service hold-off time over, scheduling restart.
+Jul  1 15:40:54 7060 systemd[1]: systemd-logind.service: Main process exited, code=exited, status=1/FAILURE
+Jul  1 15:40:54 7060 systemd[1]: Failed to start Login Service.
+Jul  1 15:40:54 7060 systemd[1]: systemd-logind.service: Unit entered failed state.
+Jul  1 15:40:54 7060 systemd[1]: systemd-logind.service: Failed with result 'exit-code'.
+Jul  1 15:40:54 7060 systemd[1]: systemd-logind.service: Service has no hold-off time, scheduling restart.

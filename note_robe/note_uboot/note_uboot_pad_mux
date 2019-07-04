@@ -1,0 +1,18 @@
+
+SNVS_TAMPER0    GPIO5_0
+......
+SNVS_TAMPER9    GPIO5_9
+BOOT_MODE0      GPIO5_10
+BOOT_MODE1      GPIO5_11
+
+
+
+
+
+
+
+
+
+
+
+

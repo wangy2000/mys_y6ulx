@@ -1,0 +1,48 @@
+# ========================================================
+(uboot\configs\mys_imx6ull_14x14_emmc_defconfig)
+IMX_CONFIG=board/myir/mys_imx6ull/imximage.cfg
+
+
+(uboot\include\configs\mys_imx6ull.h)                    // 配置信息
+#include <asm/arch/imx-regs.h>                           // cpu 寄存器，地址宏定义，外设的结构体
+	(实际指向 #include <asm/arch-mx6/imx-regs.h> )
+	#include <asm/imx-common/regs-lcdif.h>               // 定义 mxs_lcdif_regs， 和 LCDIF_ 开头的宏
+		#include <asm/imx-common/regs-common.h>
+	#include <asm/types.h>
+#include <linux/sizes.h>                                 // 内存大小的宏
+#include "mx6_common.h"                                  // 配置信息2
+#include <asm/imx-common/gpio.h>                         // 定义 gpio_regs ， 和 IMX_GPIO_NR(port, index)
+	struct gpio_regs {
+		u32 gpio_dr;	/* data */
+		u32 gpio_dir;	/* direction */
+		u32 gpio_psr;	/* pad satus */
+	};
+	#define IMX_GPIO_NR(port, index)		((((port)-1)*32)+((index)&31))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

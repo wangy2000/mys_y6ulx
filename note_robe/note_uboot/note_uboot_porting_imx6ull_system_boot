@@ -1,0 +1,90 @@
+
+imx6ull 启动顺序
+
+// =============
+Power-On Reset (POR)
+on-chip boot ROM()
+	BOOT_MODE[1:0], eFUSEs, GPIO settings 可以覆盖 eFUSEs
+
+	The main features of the ROM include:
+	• Support for booting from various boot devices
+	• Serial downloader support (USB OTG and UART)
+	• Device Configuration Data (DCD) and plugin
+	• Digital signature and encryption based High-Assurance Boot (HAB)
+	• Wake-up from the low-power modes
+	
+	The boot ROM supports these boot devices:
+	• NOR flash
+	• NAND flash
+	• OneNAND flash
+	• SD/MMC
+	• Serial (SPI) NOR flash and EEPROM
+	• QuadSPI (QSPI) flash
+
+// =============	
+可以选择从什么设备启动，也可以下载代码后运行
+
+BOOT_MODE[1:0]      Boot Type
+00                  Boot From Fuses
+01                  Serial Downloader
+10                  Internal Boot
+11                  Reserved
+
+启动之初，在 POR_B 上升沿信号的时候获取 BOOT_MODE0，BOOT_MODE1 电平状态，选择启动模式
+(BOOT_MODE[1:0] 也可以从 SRC Boot BMOD[1:0] 寄存器中读取)
+
+switch 
+1    BT_CFG1[7]  LCD_DATA7     板子已经拉低，需要高电平，闭合 / SRC_BT_CFG07
+2    BT_CFG1[6]  LCD_DATA6     板子已经拉低，需要高电平，闭合 / SRC_BT_CFG06
+3    BOOT_MODE0                高电平:闭合
+4    BOOT_MODE1                高电平:闭合
+
+Boot From Fuses mode (BOOT_MODE[1:0] = 00b)        忽略 GPIO boot
+    启动程序有 BT_FUSE_SEL   eFUSE value 决定: 
+    BT_FUSE_SEL=0, 直接跳到 01 模式从 串口下载代码，
+    BT_FUSE_SEL=1，正常启动，从选择的设备启动
+Serial Downloader (BOOT_MODE[1:0] = 01b) 
+    从串口下载代码，uart，usb，
+	WDOG_ENABLE eFUSE value 为 1 ，启动看门狗，超时芯片复位
+Internal Boot mode (BOOT_MODE[1:0] = 10b) 
+    从片上 boot ROM 启动：
+	初始化硬件，从选择的启动设备加载启动代码，验证代码 安全，有效，执行代码
+	启动失败会转到 Serial Downloader 模式
+
+eFUSE 
+
+GPIO boot overrides:
+BOOT_MODE1
+BOOT_MODE0                      2 个 pin
+LCD1_DATA00 - LCD1_DATA00       24个 pin
+
+Device Configuration Data (DCD)
+
+Device initialization
+• The ROM memory map
+• The RAM memory map
+• On-chip blocks that the ROM must use or change the POR register default values
+• Clock initialization
+• Enabling the MMU/L2 cache
+• Exception handling and interrupt handling
+
+Persistent bits：SRC
+the OCOTP contains the eFUSEs
+
+Boot devices (internal boot)
+BOOT_CFG1[7:4]    Boot device
+0000              NOR/OneNAND (EIM)
+0001              QSPI
+0011              Serial ROM (SPI)
+010x              SD/eSD/SDXC
+011x              MMC/eMMC
+1xxx              Raw NAND
+
+// =========================== sd boot
+set frequency is 347.22 khz
+电压确认，先高压后低压，3.3v  1.8v
+卡容量确认，高容量，低容量
+设置分区，如果失败，SD/SDXC card，如果成功，eSD card
+设置为高频率(normal speed 25 Mhz，high speed 50 Mhz)
+
+

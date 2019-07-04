@@ -1,0 +1,347 @@
+// ====================================  function
+board_early_init_f                                   // 初始化 uart pin 脚
+
+board_ehci_hcd_init                                  // 设置 usb 电源极性
+( *(0x02184800)=1<<9 )(imx6ullrm.page3603)
+
+board_eth_init                                       // 初始化 eth pin 脚(8 tx+rx, 2 MDC+MDIO, 1 RESET, 1 INIT )
+    fecmxc_initialize_multi                          // 调用驱动初始化
+	(uboot\board\myir\mys_imx6ull\mys_imx6ull.c)
+	
+	fecmxc_initialize_multi(bis, CONFIG_FEC_ENET_DEV, CONFIG_FEC_MXC_PHYADDR, IMX_FEC_BASE);
+	= fecmxc_initialize_multi((bd_t *)bis, 0, 0, 0x02188000);     // mii bus 注册，phy probe
+
+board_fastboot_setup                                 // 设置 fastboot 命令
+	SRC_BASE_ADDR = 020D8004
+
+board_init	                                         // 初始化了 boot_mode[1:0], temper7, temper8 四个 pin 脚， 用于初始化 iox74lv_init
+	main -> board_init_f / board_init_r(init_sequence_r)    // 设置 sdram 基地址，初始化 i2c，fec，usb_otg，qspi，gpmi_nand
+
+board_init_f                                         // 芯片复位，DDR复位，DMA复位，CCM 复位，初始化 uart pin脚，初始化 timer，初始化 DDR，清零 BSS
+	arch_cpu_init
+		init_aips();              // aips 寄存器 reset(恢复到开机默认值)
+		clear_mmdc_ch_mask        // 清除 mmdc/DDR ch mask 位
+		init_bandgap              // 初始化基准频率/bandgap
+		imx_set_wdog_powerdown    // 关闭 wdog
+		mxs_dma_init              // apbh dma 初始化
+		init_src                  // 初始化 src，热重启	
+	ccgr_init();	              // CCM 恢复开机默认设置
+	board_early_init_f            // 初始化	uart pin 脚
+	timer_init                    // 初始化时钟	
+	preloader_console_init        // 设置 gd->bd，gd->baudrate，初始化串口(驱动get_current()->start())
+	spl_dram_init                 // 初始化 dram pad 和控制器，初始化 dram 芯片
+	memset                        // bss 段清零
+	board_init_r(NULL, 0);
+
+board_late_init                                      // 添加 boot_mode，设置 mmc dev 1 命令，并运行，复位看门狗
+
+board_late_mmc_env_init                              // mmc 相关环境变量初始化
+
+board_mmc_getcd                                      // 设置 cd pin 脚，设置 data3 pin 脚，检查 data3
+
+board_mmc_get_env_dev                                // 获取 mmc 设备号
+
+board_mmc_init                                       // 设置 mmc 6个pin，设置 sdhc 时钟，然后调用 fsl_esdhc_initialize(驱动) 初始化
+
+board_phy_config                                     // 运行 phy config() 配置函数
+
+board_qspi_init                                      // 设置 qspi pin 脚，使能时钟
+
+board_recovery_setup                                 // 获取启动设备，设置启动的环境变量
+
+board_usb_phy_mode                                   // 获取 usb phy 模式
+
+ccgr_init                                            // ccm 初始化
+
+checkboard                                           // 打印 board 信息
+
+check_mmc_autodetect                                 // 检查环境变量 check mmc 自动检测功能
+
+check_recovery_cmd_file                              // android recovery
+
+do_enable_parallel_lcd                               // 配置， 初始化 lcd
+
+dram_init                                            // 测试 ram 大小，并且赋值给 gd->ram_size
+
+iox74lv_init, iox74lv_set                            // 初始化，设置 iox74lv
+
+ldo_mode_set                                         // ldo 模式设置
+
+mmc_map_to_kernel_blk                                // 返回 mmc devno
+
+power_init_board                                     // 如果是 mx6ull_9x9_evk, pmic 初始化串口
+
+setup_fec                                            // 设置 fec 控制器，使能时钟
+
+setup_gpmi_nand                                      // 设置 gpmi_nand 控制器，使能时钟
+
+setup_iomux_fec                                      // 设置 fec pad，复位 phy
+
+setup_iomux_uart                                     // 设置 uart pad
+
+setup_usb                                            // 设置 usb otg pad ( 1 pad )
+
+spl_dram_init                                        // 初始化 dram pad 和控制器，初始化 dram 芯片
+
+
+// ====================================  变量，配置信息
+board_boot_modes                  // bootmode        (struct boot_mode)
+ddr_sysinfo                       // ddr 配置        (struct boot_mode)
+displays                          // 显示器配置      (struct display_info_t)
+display_count                     // 显示器个数
+fec1_pads                         // eth1 pin 脚     (iomux_v3_cfg_t (u64))
+i2c_pad_info1                     // i2c pad         (struct i2c_pads_info)
+iox_pads                          // 4 个 pad
+lcd_pads                          // lcd pad
+mem_ddr                           // ddr 配置信息    (struct mx6_ddr3_cfg)
+mx6_ddr_ioregs                    // ddr 寄存器信息  (struct mx6ul_iomux_ddr_regs)
+mx6_grp_ioregs                    // grp 寄存器信息  (struct mx6ul_iomux_grp_regs)
+mx6_mmcd_calib                    // ddr 矫正信息    (struct mx6_mmdc_calibration)
+nand_pads                         // nand pad
+qn_output[8]                      // 枚举            (enum qn_func )
+seq[3][2]                         // 枚举            (enum qn_level)
+quadspi_pads                      // qspi pad        (iomux_v3_cfg_t)
+uart1_pads
+usb_otg_pads
+usdhc1_pads
+usdhc2_cd_pads
+usdhc2_dat3_pads
+usdhc2_emmc_pads
+usdhc2_pads
+usdhc_cfg[2]                      // (struct fsl_esdhc_cfg)
+
+
+
+// ---------------------------------------------
+struct i2c_pads_info {
+	struct i2c_pin_ctrl scl;
+	struct i2c_pin_ctrl sda;
+};
+struct i2c_pin_ctrl {
+	iomux_v3_cfg_t i2c_mode;
+	iomux_v3_cfg_t gpio_mode;
+	unsigned char gp;
+	unsigned char spare;
+};
+// ---------------------------------------------
+struct mx6_ddr3_cfg {
+	u16 mem_speed;	/* ie 1600 for DDR3-1600 (800,1066,1333,1600) */
+	u8 density;	/* chip density (Gb) (1,2,4,8) */
+	u8 width;	/* bus width (bits) (4,8,16) */
+	u8 banks;	/* number of banks */
+	u8 rowaddr;	/* row address bits (11-16)*/
+	u8 coladdr;	/* col address bits (9-12) */
+	u8 pagesz;	/* page size (K) (1-2) */
+	u16 trcd;	/* tRCD=tRP=CL (ns*100) */
+	u16 trcmin;	/* tRC min (ns*100) */
+	u16 trasmin;	/* tRAS min (ns*100) */
+	u8 SRT;		/* self-refresh temperature: 0=normal, 1=extended */
+};
+// ---------------------------------------------
+struct mx6ul_iomux_grp_regs {
+	u32 res1[36];
+	u32 grp_addds;
+	u32 grp_ddrmode_ctl;
+	u32 grp_b0ds;
+	u32 grp_ddrpk;
+	u32 grp_ctlds;
+	u32 grp_b1ds;
+	u32 grp_ddrhys;
+	u32 grp_ddrpke;
+	u32 grp_ddrmode;
+	u32 grp_ddr_type;
+};
+// ---------------------------------------------
+struct mx6_mmdc_calibration {
+	/* write leveling calibration */
+	u32 p0_mpwldectrl0;
+	u32 p0_mpwldectrl1;
+	u32 p1_mpwldectrl0;
+	u32 p1_mpwldectrl1;
+	/* read DQS gating */
+	u32 p0_mpdgctrl0;
+	u32 p0_mpdgctrl1;
+	u32 p1_mpdgctrl0;
+	u32 p1_mpdgctrl1;
+	/* read delay */
+	u32 p0_mprddlctl;
+	u32 p1_mprddlctl;
+	/* write delay */
+	u32 p0_mpwrdlctl;
+	u32 p1_mpwrdlctl;
+	/* lpddr2 zq hw calibration */
+	u32 mpzqlp2ctl;
+};
+// ---------------------------------------------
+struct fsl_esdhc_cfg {
+#ifdef CONFIG_FSL_LAYERSCAPE
+	u64	esdhc_base;
+#else
+	u32	esdhc_base;
+#endif
+	u32	sdhc_clk;
+	u8	max_bus_width;
+	u8	wp_enable;
+	struct mmc_config cfg;
+};
+
+
+// ====================================  dram 详细分析
+static void spl_dram_init(void)
+{
+	mx6ul_dram_iocfg(mem_ddr.width, &mx6_ddr_ioregs, &mx6_grp_ioregs);            // 配置 pad，配置控制器    MX6UL_IOM_DDR_BASE = 0x020e0200; MX6UL_IOM_GRP_BASE = 0x020e0400
+	mx6_dram_cfg(&ddr_sysinfo, &mx6_mmcd_calib, &mem_ddr);                        // 初始化 dram 芯片        MMDC_P0_BASE_ADDR = 0x021b0000
+}
+
+// ----------------------------------
+static struct mx6_ddr3_cfg mem_ddr = {
+	.mem_speed = 800,
+	.density = 4,
+	.width = 16,
+	.banks = 8,
+	.rowaddr = 15,
+	.coladdr = 10,
+	.pagesz = 2,
+	.trcd = 1375,
+	.trcmin = 4875,
+	.trasmin = 3500,
+};
+struct mx6_ddr3_cfg {
+	u16 mem_speed;	/* ie 1600 for DDR3-1600 (800,1066,1333,1600) */
+	u8 density;	/* chip density (Gb) (1,2,4,8) */
+	u8 width;	/* bus width (bits) (4,8,16) */
+	u8 banks;	/* number of banks */
+	u8 rowaddr;	/* row address bits (11-16)*/
+	u8 coladdr;	/* col address bits (9-12) */
+	u8 pagesz;	/* page size (K) (1-2) */
+	u16 trcd;	/* tRCD=tRP=CL (ns*100) */
+	u16 trcmin;	/* tRC min (ns*100) */
+	u16 trasmin;	/* tRAS min (ns*100) */
+	u8 SRT;		/* self-refresh temperature: 0=normal, 1=extended */
+};
+
+static struct mx6ul_iomux_ddr_regs mx6_ddr_ioregs = {
+	.dram_dqm0 = 0x00000030,
+	.dram_dqm1 = 0x00000030,
+	.dram_ras = 0x00000030,
+	.dram_cas = 0x00000030,
+	.dram_odt0 = 0x00000030,
+	.dram_odt1 = 0x00000030,
+	.dram_sdba2 = 0x00000000,
+	.dram_sdclk_0 = 0x00000008,
+	.dram_sdqs0 = 0x00000038,
+	.dram_sdqs1 = 0x00000030,
+	.dram_reset = 0x00000030,
+};
+struct mx6ul_iomux_ddr_regs {
+	u32 res1[17];
+	u32 dram_dqm0;
+	u32 dram_dqm1;
+	u32 dram_ras;
+	u32 dram_cas;
+	u32 dram_cs0;
+	u32 dram_cs1;
+	u32 dram_sdwe_b;
+	u32 dram_odt0;
+	u32 dram_odt1;
+	u32 dram_sdba0;
+	u32 dram_sdba1;
+	u32 dram_sdba2;
+	u32 dram_sdcke0;
+	u32 dram_sdcke1;
+	u32 dram_sdclk_0;
+	u32 dram_sdqs0;
+	u32 dram_sdqs1;
+	u32 dram_reset;
+};
+
+static struct mx6ul_iomux_grp_regs mx6_grp_ioregs = {
+	.grp_addds = 0x00000030,
+	.grp_ddrmode_ctl = 0x00020000,
+	.grp_b0ds = 0x00000030,
+	.grp_ctlds = 0x00000030,
+	.grp_b1ds = 0x00000030,
+	.grp_ddrpke = 0x00000000,
+	.grp_ddrmode = 0x00020000,
+#ifdef CONFIG_TARGET_MX6UL_9X9_EVK
+	.grp_ddr_type = 0x00080000,
+#else
+	.grp_ddr_type = 0x000c0000,
+#endif
+};
+struct mx6ul_iomux_grp_regs {
+	u32 res1[36];
+	u32 grp_addds;
+	u32 grp_ddrmode_ctl;
+	u32 grp_b0ds;
+	u32 grp_ddrpk;
+	u32 grp_ctlds;
+	u32 grp_b1ds;
+	u32 grp_ddrhys;
+	u32 grp_ddrpke;
+	u32 grp_ddrmode;
+	u32 grp_ddr_type;
+};
+
+// ----------------------------------
+struct mx6_ddr_sysinfo ddr_sysinfo = {
+	.dsize = 0,
+	.cs_density = 20,
+	.ncs = 1,
+	.cs1_mirror = 0,
+	.rtt_wr = 2,
+	.rtt_nom = 1,		/* RTT_Nom = RZQ/2 */
+	.walat = 1,		/* Write additional latency */
+	.ralat = 5,		/* Read additional latency */
+	.mif3_mode = 3,		/* Command prediction working mode */
+	.bi_on = 1,		/* Bank interleaving enabled */
+	.sde_to_rst = 0x10,	/* 14 cycles, 200us (JEDEC default) */
+	.rst_to_cke = 0x23,	/* 33 cycles, 500us (JEDEC default) */
+	.ddr_type = DDR_TYPE_DDR3,
+};
+struct mx6_ddr_sysinfo {
+	u8 dsize;	/* size of bus (in dwords: 0=16bit,1=32bit,2=64bit) */
+	u8 cs_density;	/* density per chip select (Gb) */
+	u8 ncs;		/* number chip selects used (1|2) */
+	char cs1_mirror;/* enable address mirror (0|1) */
+	char bi_on;	/* Bank interleaving enable */
+	u8 rtt_nom;	/* Rtt_Nom (DDR3_RTT_*) */
+	u8 rtt_wr;	/* Rtt_Wr (DDR3_RTT_*) */
+	u8 ralat;	/* Read Additional Latency (0-7) */
+	u8 walat;	/* Write Additional Latency (0-3) */
+	u8 mif3_mode;	/* Command prediction working mode */
+	u8 rst_to_cke;	/* Time from SDE enable to CKE rise */
+	u8 sde_to_rst;	/* Time from SDE enable until DDR reset# is high */
+	u8 pd_fast_exit;/* enable precharge powerdown fast-exit */
+	u8 ddr_type;	/* DDR type: DDR3(0) or LPDDR2(1) */
+};
+
+static struct mx6_mmdc_calibration mx6_mmcd_calib = {
+	.p0_mpwldectrl0 = 0x00070007,
+	.p0_mpdgctrl0 = 0x41490145,
+	.p0_mprddlctl = 0x40404546,
+	.p0_mpwrdlctl = 0x4040524D,
+};
+struct mx6_mmdc_calibration {
+	/* write leveling calibration */
+	u32 p0_mpwldectrl0;
+	u32 p0_mpwldectrl1;
+	u32 p1_mpwldectrl0;
+	u32 p1_mpwldectrl1;
+	/* read DQS gating */
+	u32 p0_mpdgctrl0;
+	u32 p0_mpdgctrl1;
+	u32 p1_mpdgctrl0;
+	u32 p1_mpdgctrl1;
+	/* read delay */
+	u32 p0_mprddlctl;
+	u32 p1_mprddlctl;
+	/* write delay */
+	u32 p0_mpwrdlctl;
+	u32 p1_mpwrdlctl;
+	/* lpddr2 zq hw calibration */
+	u32 mpzqlp2ctl;
+};
+
+
+

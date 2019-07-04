@@ -1,0 +1,21 @@
+
+#define U_BOOT_ENV_CALLBACK(name, callback) \
+	ll_entry_declare(struct env_clbk_tbl, name, env_clbk) = \
+	{#name, callback}
+
+#define ll_entry_declare(_type, _name, _list)				\
+	_type _u_boot_list_2_##_list##_2_##_name __aligned(4)		\
+			__attribute__((unused,				\
+			section(".u_boot_list_2_"#_list"_2_"#_name)))
+
+U_BOOT_ENV_CALLBACK(name, callback)
+=  ll_entry_declare(struct env_clbk_tbl, name, env_clbk) = {#name, callback}
+=  _type  _u_boot_list_2_##_list##_2_##_name = {#name, callback}    __aligned(4)   __attribute__((unused, section(".u_boot_list_2_"#_list"_2_"#_name)))
+
+
+struct env_clbk_tbl {
+	const char *name;		/* Callback name */
+	int (*callback)(const char *name, const char *value, enum env_op op,
+		int flags);
+};
+

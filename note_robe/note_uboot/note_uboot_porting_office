@@ -1,0 +1,93 @@
+If the system board that you have is not listed, then you will need
+to port U-Boot to your hardware platform. To do this, follow these
+steps:
+
+1.  Create a new directory to hold your board specific code. Add any
+    files you need. In your board directory, you will need at least
+    the "Makefile" and a "<board>.c".
+2.  Create a new configuration file "include/configs/<board>.h" for
+    your board.
+3.  If you're porting U-Boot to a new CPU, then also create a new
+    directory to hold your CPU specific code. Add any files you need.
+4.  Run "make <board>_defconfig" with your new name.
+5.  Type "make", and you should get a working "u-boot.srec" file
+    to be installed on your target system.
+6.  Debug and solve any problems that might arise.
+    [Of course, this last step is much harder than it sounds.]
+
+
+U-Boot Porting Guide:
+----------------------
+
+[Based on messages by Jerry Van Baren in the U-Boot-Users mailing
+list, October 2002]
+
+
+int main(int argc, char *argv[])
+{
+	sighandler_t no_more_time;
+
+	signal(SIGALRM, no_more_time);
+	alarm(PROJECT_DEADLINE - toSec (3 * WEEK));
+
+	if (available_money > available_manpower) {
+		Pay consultant to port U-Boot;
+		return 0;
+	}
+
+	Download latest U-Boot source;                                     # 下载源码
+
+	Subscribe to u-boot mailing list;                                  # 订阅邮件
+
+	if (clueless)
+		email("Hi, I am new to U-Boot, how do I get started?");
+
+	while (learning) {
+		Read the README file in the top level directory;               # 读文档
+		Read http://www.denx.de/twiki/bin/view/DULG/Manual;
+		Read applicable doc/*.README;
+		Read the source, Luke;
+		/* find . -name "*.[chS]" | xargs grep -i <keyword> */
+	}
+
+	if (available_money > toLocalCurrency ($2500))
+		Buy a BDI3000;
+	else
+		Add a lot of aggravation and time;
+
+	if (a similar board exists) {	/* hopefully... */
+		cp -a board/<similar> board/<myboard>                           # 创建板子
+		cp include/configs/<similar>.h include/configs/<myboard>.h      # 创建配置
+	} else {
+		Create your own board support subdirectory;
+		Create your own board include/configs/<myboard>.h file;
+	}
+	Edit new board/<myboard> files                                      # 编辑文件
+	Edit new include/configs/<myboard>.h                                # 编辑配置
+
+	while (!accepted) {
+		while (!running) {               
+			do {
+				Add / modify source code;                               # 改源码先编译通过
+			} until (compiles);
+			Debug;
+			if (clueless)
+				email("Hi, I am having problems...");
+		}                                                               # 改源码运行起来
+		Send patch file to the U-Boot email list;
+		if (reasonable critiques)
+			Incorporate improvements from email list code review;
+		else
+			Defend code as written;
+	}                                                                   # 改源码直到自己满意
+
+	return 0;
+}
+
+void no_more_time (int sig)
+{
+      hire_a_guru();
+}
+
+
+

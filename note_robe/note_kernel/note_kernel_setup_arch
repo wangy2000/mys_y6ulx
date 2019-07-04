@@ -1,0 +1,104 @@
+// =================================
+void __init setup_arch(char **cmdline_p)
+{
+	const struct machine_desc *mdesc;
+
+	setup_processor();	                                                           // -------- setup_processor：设置 cpu_name = list->cpu_name;
+                                                                                   //                               __cpu_architecture = __get_cpu_architecture();
+                                                                                   //                               processor = *list->proc;
+                                                                                   //                               cpu_tlb = *list->tlb;
+                                                                                   //                               cpu_user = *list->user;
+                                                                                   //                               cpu_cache = *list->cache;
+                                                                                   //                               init_utsname()->machine
+                                                                                   //                               elf_platform
+                                                                                   //                               elf_hwcap = list->elf_hwcap;
+                                                                                   //                               elf_hwcap2
+                                                                                   //                               设置 cache_policies 策略，list->__cpu_mm_mmu_flags
+                                                                                   //                               erratum a15 处理
+                                                                                   //                               设置 cacheid
+                                                                                   //                               设置 per_cpu_offset(cpu),设置异常返回栈指针 R14
+                                                                                   // --------- mdesc = setup_machine_fdt： 根据设备树，从多个 mdesc 中获取匹配的 mdesc (全局变量 initial_boot_params 就是 fdt )
+                                                                                   //                               如果有 mdesc->dt_fixup()，则运行
+                                                                                   //                               遍历设备树，确认 depth ==1，是 chosen 属性值，chose@0 属性值，获取initrd_start， initrd_end，设置 boot_command_line 从 kconfig 或者从 DT 的 bootargs，
+                                                                                   //                               从设备树获取 dt_root_size_cells， 和 dt_root_addr_cells
+                                                                                   //                               获取内存开始地址，和大小，添加 memblock.memory
+                                                                                   //                               设置 __machine_arch_type = mdesc->nr
+	mdesc = setup_machine_fdt(__atags_pointer);                                 // 设置 boot_command_line, (结束的位置 early_init_dt_scan_nodes() 中)添加 memblock
+	if (!mdesc)
+		mdesc = setup_machine_tags(__atags_pointer, __machine_arch_type);
+	machine_desc = mdesc;                                                       // 设置 machine_desc，machine_name
+	machine_name = mdesc->name;
+	dump_stack_set_arch_desc("%s", mdesc->name);                                // 输出到 dump_stack mdesc->name
+
+	if (mdesc->reboot_mode != REBOOT_HARD)
+		reboot_mode = mdesc->reboot_mode;
+
+	init_mm.start_code = (unsigned long) _text;
+	init_mm.end_code   = (unsigned long) _etext;
+	init_mm.end_data   = (unsigned long) _edata;
+	init_mm.brk	   = (unsigned long) _end;                                      // 设置 init_mm 中的 code  data 范围
+
+	/* populate cmd_line too for later use, preserving boot_command_line */
+	strlcpy(cmd_line, boot_command_line, COMMAND_LINE_SIZE);                    // cmd_line, boot_command_line 都是用来 boot 启动用的
+	*cmdline_p = cmd_line;                                                      // 设置了最外部的 command_line
+
+	parse_early_param();                                                        // 如果 .init.setup 段中存在 param = "console"，并且 p->str = "earlycon" / 如果 p->early 不为零，并且 p->str == param， 则执行 p->setup_func(val)
+
+	early_paging_init(mdesc, lookup_processor_type(read_cpuid_id()));           // 如果 mdesc->init_meminfo() 存在，则执行
+	setup_dma_zone(mdesc);                                                      // 从 mdesc 设置 arm_dma_limit，arm_dma_pfn_limit
+	
+	sanity_check_meminfo();                                                     // 检查 memblock 各个 region 是不是正确，
+	                                                                            // 设置低内存上限 arm_lowmem_limit
+																				// 设置高内存下限 high_memory
+																				// 设置 memblock_limit
+	
+	arm_memblock_init(mdesc);                                                   // 保留 kernel，initrd，页表，mdesc->reserve()，插入 region
+	                                                                            // 保留 DT 中的保留段并用 kmem 管理分配所有保留的内存，
+																				// 保留 DMA region，分配内存，创建连续内存
+																				
+	paging_init(mdesc);                                                         // 初始化页表权限，初始化页表，初始化 zone
+	request_standard_resources(mdesc);                                          // 申请内核 struct resource ，加入链表 iomem_resource 中。其中 kernel_code，kernel_data 添加到申请的 resource 中
+	                                                                            // 申请 mdesc 中的 mdesc->video_start，mdesc->reserve_lp0/1/2 对应的 resource，添加加到 iomem_resource 中
+
+	if (mdesc->restart)
+		arm_pm_restart = mdesc->restart;                                        // 增加电源管理重启函数，arm_pm_restart = mdesc->restart
+
+	unflatten_device_tree();                                                    // 解析 DT (分析 DT 的各个 node ，属性值，分配内存(memblock)，填充节点和属性值。)
+	                                                                            // 分配 alias 内存空间
+
+	arm_dt_init_cpu_maps();	                                                    // 给 DT 中各个 cpu 设置 (struct smp_operations) smp_ops, 添加所有 cpu 到 cpu_possible_bits 和 __cpu_logical_map 中
+
+	psci_init();                                                                // 初始化 psci_of_match 匹配的节点，运行节点的 (psci_initcall_t)matched_np->data() 函数
+#ifdef CONFIG_SMP
+	if (is_smp()) {
+		if (!mdesc->smp_init || !mdesc->smp_init()) {
+			if (psci_smp_available())
+				smp_set_ops(&psci_smp_ops);
+			else if (mdesc->smp)
+				smp_set_ops(mdesc->smp);
+		}
+		smp_init_cpus();
+		smp_build_mpidr_hash();
+	}
+#endif
+
+	if (!is_smp())
+		hyp_mode_check();
+
+	reserve_crashkernel();
+
+#ifdef CONFIG_MULTI_IRQ_HANDLER
+	handle_arch_irq = mdesc->handle_irq;                                         // 设置 handle_arch_irq
+#endif
+
+#ifdef CONFIG_VT
+#if defined(CONFIG_VGA_CONSOLE)
+	conswitchp = &vga_con;
+#elif defined(CONFIG_DUMMY_CONSOLE)
+	conswitchp = &dummy_con;                                                     // 设置 conswitchp = &dummy_con;
+#endif
+#endif
+
+	if (mdesc->init_early)
+		mdesc->init_early();                                                     // 如果 mdesc->init_early() 存在则运行
+}

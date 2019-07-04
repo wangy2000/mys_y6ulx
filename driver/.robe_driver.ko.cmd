@@ -1,0 +1,1 @@
+cmd_/datadisk/dev_mys_y6ulx/driver/robe_driver.ko := /datadisk/dev_mys_y6ulx/gcc-linaro-6.3.1-2017.02-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /datadisk/dev_mys_y6ulx/driver/robe_driver.ko /datadisk/dev_mys_y6ulx/driver/robe_driver.o /datadisk/dev_mys_y6ulx/driver/robe_driver.mod.o

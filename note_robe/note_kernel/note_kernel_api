@@ -1,0 +1,20 @@
+
+const void *fdt_offset_ptr(const void *fdt, int offset, unsigned int len)      // 获取 fdt 中 dt_struct 结构体，偏移 offset 的指针，并检查 len 是否有效
+
+int fdt_next_node(const void *fdt, int offset, int *depth)                     // 获取 fdt 的下一个 node 的 offset，返回 node 的深度 depth 
+
+const void *__init of_get_flat_dt_prop(unsigned long node, const char *name, int *size)  // 获取 node 中，名字为 name 的属性值，返回属性的 size
+
+of_find_node_by_path("/chosen");                                               // 找到 path 为 ("/chosen") 的 node
+
+of_find_node_opts_by_path(name, &of_stdout_options);
+
+
+
+
+
+
+
+
+
+

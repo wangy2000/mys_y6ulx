@@ -1,0 +1,126 @@
+
+# ============================================================================================================== uboot 项目架构 修改
+If the system board that you have is not listed, then you will need
+to port U-Boot to your hardware platform. To do this, follow these
+steps:
+
+1.  Create a new directory to hold your board specific code. Add any
+    files you need. In your board directory, you will need at least
+    the "Makefile" and a "<board>.c".
+2.  Create a new configuration file "include/configs/<board>.h" for
+    your board.
+3.  If you're porting U-Boot to a new CPU, then also create a new
+    directory to hold your CPU specific code. Add any files you need.
+4.  Run "make <board>_defconfig" with your new name.
+5.  Type "make", and you should get a working "u-boot.srec" file
+    to be installed on your target system.
+6.  Debug and solve any problems that might arise.
+    [Of course, this last step is much harder than it sounds.]
+
+# ========================================================
+1，创建板目录，创建板文件，修改makefile
+创建 vendor 目录 cp board/freescale  board/robe -rp ; cd board/robe
+创建 board 目录 cp mx6ullevk  robe_mys_y6ulx -rf
+创建 c 文件 cd robe_mys_y6ulx/; mv mx6ullevk.c  robe_mys_y6ulx.c
+修改 makefile：obj-y  := mx6ullevk.o 为 obj-y  := robe_mys_y6ulx.o
+
+2，创建配置头文件
+cd u-boot-2019.04/include/configs
+cp mx6ullevk.h   robe_mys_y6ulx.h 
+(需要创建配置文件)
+cd u-boot-2019.04/configs
+cp cp mx6ull_14x14_evk_defconfig robe_mys_y6ulx_defconfig
+修改配置文件 和 kconfig 如下：
+
+3，(如果需要)创建 cpu 目录和文件
+
+4，配置 make robe_mys_y6ulx_defconfig
+
+5，编译 make，安装
+
+6，调试
+
+# ======================================= 修改配置文件 和 kconfig 如下
+(configs\robe_mys_y6ulx_defconfig)
+1,修改配置文件：
+CONFIG_TARGET_ROBE_MYS_Y6ULX=y
+CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=board/robe/robe_mys_y6ulx/imximage.cfg"
+2,修改 board kconfig 文件 board\robe\robe_mys_y6ulx\Kconfig 中的
+if TARGET_ROBE_MYS_Y6ULX
+config SYS_BOARD
+	default "robe_mys_y6ulx"
+config SYS_VENDOR
+	default "robe"
+config SYS_CONFIG_NAME
+	default "robe_mys_y6ulx"
+endif
+3,添加板子到 kconfig 中：从 arch/${ARCH}/kconfig 中添加板子配置 source "board/freescale/robe_mys_y6ulx/Kconfig"
+(u-boot-2019.04\arch\arm\mach-imx\mx6\Kconfig 中添加板子配置 source "board/freescale/robe_mys_y6ulx/Kconfig")
+4,修改 arch\arm\mach-imx\mx6\Kconfig 添加
+config TARGET_ROBE_MYS_Y6ULX
+	bool "Support robe_mys_y6ulx"
+	select BOARD_LATE_INIT
+	select DM
+	select DM_THERMAL
+	select MX6ULL
+	imply CMD_DM
+进 menuconfig 重新选择一下(或者 make distclean，make menuconfig 就好)
+
+# ============================================================================================================== uboot 代码修改
+(uboot\include\configs\mys_imx6ull.h)                                       // 调试
+添加宏定义，开始调试代码
+#define DEBUG
+(u-boot-2019.04\arch\arm\dts\imx6ull-14x14-evk.dts)                         // 修改 model
+修改设备树，model 属性，显示正常
+(u-boot-2019.04\board\robe\robe_mys_y6ulx\robe_mys_y6ulx.c)                 // 修改 board
+修改 checkboard 函数，board 显示正常
+(u-boot-2019.04\include\configs\robe_mys_y6ulx.h)                           // 修改串口波特率
+两个方法，环境变量，驱动 kconfig 都可以 
+优先级: 环境变量 > 驱动修改
+修改环境变量："baudrate=1000000\0" 或者修改 驱动 kconfig 之后
+还需要添加 #define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200, 230400, 500000, 1000000, 1500000 }
+(u-boot-2019.04\configs\robe_mys_y6ulx_defconfig)                           // 修改设备树
+修改配置文件 CONFIG_DEFAULT_DEVICE_TREE="robe_mys_y6ulx"
+(u-boot-2019.04\arch\arm\dts\Makefile)
+修改 makefile ，添加 dtb-$(CONFIG_TARGET_ROBE_MYS_Y6ULX) += robe_mys_y6ulx.dtb
+(u-boot-2019.04\include\configs\robe_mys_y6ulx.h)
+修改设备树文件，1修改环境变量  "fdt_file=robe_mys_y6ulx.dtb\0"
+
+DRAM:   512 MiB
+512 MiB  在 init_sequence_f 中 show_dram_config 中
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
