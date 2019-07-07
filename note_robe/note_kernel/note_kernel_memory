@@ -183,5 +183,22 @@ extern struct memblock memblock;
 . = 0x30000000;                           // 链接地址 0x30000000，虚拟地址
 .text : AT(4096) { *(.text) }             // 加载地址 4096
 
+// ================================
+struct zone
+
+struct free_area {                                     // slab 管理内存的结构
+	struct list_head	free_list[MIGRATE_TYPES];
+	unsigned long		nr_free;
+};
+
+
+
+
+
+
+
+
+
+
 
 

@@ -1,0 +1,36 @@
+
+// =================================  数组结构存放 boot_command_line     param
+struct kernel_param {
+	const char *name;
+	const struct kernel_param_ops *ops;
+	u16 perm;
+	s8 level;
+	u8 flags;
+	union {
+		void *arg;
+		const struct kparam_string *str;
+		const struct kparam_array *arr;
+	};
+};
+
+extern const struct kernel_param __start___param[], __stop___param[];
+
+struct kernel_param_ops {
+	/* How the ops should behave */
+	unsigned int flags;
+	/* Returns 0, or -errno.  arg is in kp->arg. */
+	int (*set)(const char *val, const struct kernel_param *kp);
+	/* Returns length written or -errno.  Buffer is 4k (ie. be short!) */
+	int (*get)(char *buffer, const struct kernel_param *kp);
+	/* Optional function to free kp->arg when module unloaded. */
+	void (*free)(void *arg);
+};
+
+
+
+
+
+
+
+
+

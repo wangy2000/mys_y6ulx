@@ -4,7 +4,7 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 	set_zonelist_order();                                                 // 设置 current_zonelist_order = ZONELIST_ORDER_ZONE = 2
 
 	if (system_state == SYSTEM_BOOTING) {
-		build_all_zonelists_init();
+		build_all_zonelists_init();                                       // 遍历所有 online 的节点，填充 node_zonelists，zonelist，设置 struct per_cpu_pageset 
 	} else {
 #ifdef CONFIG_MEMORY_HOTPLUG
 		if (zone)
@@ -15,7 +15,7 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 		stop_machine(__build_all_zonelists, pgdat, NULL);
 		/* cpuset refresh routine should be here */
 	}
-	vm_total_pages = nr_free_pagecache_pages();
+	vm_total_pages = nr_free_pagecache_pages();                           // 获取总的 vm_total_pages
 	/*
 	 * Disable grouping by mobility if the number of pages in the
 	 * system is too low to allow the mechanism to work. It would be
@@ -43,9 +43,9 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 static noinline void __init
 build_all_zonelists_init(void)
 {
-	__build_all_zonelists(NULL);
-	mminit_verify_zonelist();
-	cpuset_init_current_mems_allowed();
+	__build_all_zonelists(NULL);                                    // 创建 struct pglist_data，填充 node_zonelists，zonelist，设置 struct per_cpu_pageset
+	mminit_verify_zonelist();                                       // 验证 zonelist，(各个 node 内的各个 zone，zonelist. )
+	cpuset_init_current_mems_allowed();                             // 打开 current->mems_allowed 
 }
 
 // --------
@@ -59,15 +59,15 @@ static int __build_all_zonelists(void *data)
 	memset(node_load, 0, sizeof(node_load));
 #endif
 
-	if (self && !node_online(self->node_id)) {
-		build_zonelists(self);
-		build_zonelist_cache(self);
+	if (self && !node_online(self->node_id)) {                       // 遍历 online 所有节点
+		build_zonelists(self);                                       // 初始化 struct pglist_data 中的 node_zonelists 成员，填充 zonelist
+		build_zonelist_cache(self);                                  // 填充 zonelist 的 cache
 	}
 
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
 
-		build_zonelists(pgdat);
+		build_zonelists(pgdat);                                      // 创建各个节点 zonelists
 		build_zonelist_cache(pgdat);
 	}
 
@@ -85,7 +85,7 @@ static int __build_all_zonelists(void *data)
 	 * (a chicken-egg dilemma).
 	 */
 	for_each_possible_cpu(cpu) {
-		setup_pageset(&per_cpu(boot_pageset, cpu), 0);
+		setup_pageset(&per_cpu(boot_pageset, cpu), 0);                       // 设置 struct per_cpu_pageset
 
 #ifdef CONFIG_HAVE_MEMORYLESS_NODES
 		/*
@@ -102,10 +102,57 @@ static int __build_all_zonelists(void *data)
 	}
 
 	return 0;
-}
+} 
 
+// --------
+typedef struct pglist_data {
+	struct zone node_zones[MAX_NR_ZONES];
+	struct zonelist node_zonelists[MAX_ZONELISTS];
+	int nr_zones;
+#ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */
+	struct page *node_mem_map;
+#ifdef CONFIG_PAGE_EXTENSION
+	struct page_ext *node_page_ext;
+#endif
+#endif
+#ifndef CONFIG_NO_BOOTMEM
+	struct bootmem_data *bdata;
+#endif
+#ifdef CONFIG_MEMORY_HOTPLUG
+	/*
+	 * Must be held any time you expect node_start_pfn, node_present_pages
+	 * or node_spanned_pages stay constant.  Holding this will also
+	 * guarantee that any pfn_valid() stays that way.
+	 *
+	 * pgdat_resize_lock() and pgdat_resize_unlock() are provided to
+	 * manipulate node_size_lock without checking for CONFIG_MEMORY_HOTPLUG.
+	 *
+	 * Nests above zone->lock and zone->span_seqlock
+	 */
+	spinlock_t node_size_lock;
+#endif
+	unsigned long node_start_pfn;
+	unsigned long node_present_pages; /* total number of physical pages */
+	unsigned long node_spanned_pages; /* total size of physical page
+					     range, including holes */
+	int node_id;
+	wait_queue_head_t kswapd_wait;
+	wait_queue_head_t pfmemalloc_wait;
+	struct task_struct *kswapd;	/* Protected by
+					   mem_hotplug_begin/end() */
+	int kswapd_max_order;
+	enum zone_type classzone_idx;
+#ifdef CONFIG_NUMA_BALANCING
+	/* Lock serializing the migrate rate limiting window */
+	spinlock_t numabalancing_migrate_lock;
 
+	/* Rate limiting time interval */
+	unsigned long numabalancing_migrate_next_window;
 
+	/* Number of pages migrated during the rate limiting time interval */
+	unsigned long numabalancing_migrate_nr_pages;
+#endif
+} pg_data_t;
 
 
 

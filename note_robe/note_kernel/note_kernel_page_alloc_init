@@ -1,0 +1,85 @@
+
+void __init page_alloc_init(void)
+{
+	hotcpu_notifier(page_alloc_cpu_notify, 0);
+}
+
+
+// --------
+#define hotcpu_notifier(fn, pri)	cpu_notifier(fn, pri)
+
+#define cpu_notifier(fn, pri) {					\
+	static struct notifier_block fn##_nb =			\
+		{ .notifier_call = fn, .priority = pri };	\
+	register_cpu_notifier(&fn##_nb);			\
+}
+
+hotcpu_notifier(page_alloc_cpu_notify, 0)
+
+= static struct  notifier_block  page_alloc_cpu_notify_nb = { 
+                                                              .notifier_call = fn, 
+															  .priority = pri 
+															};
+		                        register_cpu_notifier(&page_alloc_cpu_notify_nb);
+
+int __ref register_cpu_notifier(struct notifier_block *nb)
+{
+	int ret;
+	cpu_maps_update_begin();                                           // 加锁
+	ret = raw_notifier_chain_register(&cpu_chain, nb);                 // 添加 struct  notifier_block 到队列 cpu_chain 队列中
+	cpu_maps_update_done();                                            // 减锁
+	return ret;
+}
+
+int raw_notifier_chain_register(struct raw_notifier_head *nh,
+		struct notifier_block *n)
+{
+	return notifier_chain_register(&nh->head, n);
+}
+
+static int notifier_chain_register(struct notifier_block **nl,
+		struct notifier_block *n)
+{
+	while ((*nl) != NULL) {
+		if (n->priority > (*nl)->priority)
+			break;
+		nl = &((*nl)->next);
+	}
+	n->next = *nl;
+	rcu_assign_pointer(*nl, n);
+	return 0;
+}
+
+
+// --------
+static int page_alloc_cpu_notify(struct notifier_block *self,             // 
+				 unsigned long action, void *hcpu)
+{
+	int cpu = (unsigned long)hcpu;
+
+	if (action == CPU_DEAD || action == CPU_DEAD_FROZEN) {
+		lru_add_drain_cpu(cpu);
+		drain_pages(cpu);
+
+		/*
+		 * Spill the event counters of the dead processor
+		 * into the current processors event counters.
+		 * This artificially elevates the count of the current
+		 * processor.
+		 */
+		vm_events_fold_cpu(cpu);
+
+		/*
+		 * Zero the differential counters of the dead processor
+		 * so that the vm statistics are consistent.
+		 *
+		 * This is only okay since the processor is dead and cannot
+		 * race with what we are doing.
+		 */
+		cpu_vm_stats_fold(cpu);
+	}
+	return NOTIFY_OK;
+}
+
+
+

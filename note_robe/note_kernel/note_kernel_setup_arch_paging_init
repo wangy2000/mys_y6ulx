@@ -12,7 +12,7 @@ void __init paging_init(const struct machine_desc *mdesc)
 	                                                              // 设置 pgprot_hyp_device
 																  
 	prepare_page_table();                                         // 遍历 0 到 kernel 尾部，到 PAGE_OFFSET，arm_lowmem_limit 到 VMALLOC_START 之间的虚拟地址，清零页表项
-	map_lowmem();                                                 // 创建 arm_lowmem_limit 以下，所有 memblock  region 需要的 pud，pmd，pte 内存. 
+	map_lowmem();                                                 // 创建 arm_lowmem_limit 以下，所有 memblock  region 按照 struct map_desc 划分，并建立 pud，pmd，pte 映射内存
 	                                                              // (使用 memblock_alloc 分配 pud，pmd，pte 内存, 内存段使用 struct map_desc 描述)
 	dma_contiguous_remap();                                       // 准备 DMA 内存所在的 struct map_desc, 清零对应的页表, 创建 struct map_desc md，分配  struct static_vm 并添加到全局变量 static_vmlist 中
 	devicemaps_init(mdesc);                                       // 创建 vectors ，FLUSH 的 struct map_desc ，分配内存创建页表，分配  struct static_vm 并添加到全局变量 static_vmlist 中
@@ -24,7 +24,7 @@ void __init paging_init(const struct machine_desc *mdesc)
 	/* allocate the zero page. */
 	zero_page = early_alloc(PAGE_SIZE);                           // 分配 zero_page
 
-	bootmem_init();                                               // 设置内存的起始页地址，低内存上限页地址，所有内存上限也地址，设置三个 zone 的数组
+	bootmem_init();                                               // 设置内存的起始页地址，低内存上限页地址，所有内存上限也地址，初始化三个 zone 的数组
 
 	empty_zero_page = virt_to_page(zero_page);                    // 设置 零页表 对应的 页
 	__flush_dcache_page(NULL, empty_zero_page);
